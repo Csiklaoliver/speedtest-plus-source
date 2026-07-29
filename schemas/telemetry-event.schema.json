@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speedtest.example.invalid/schemas/telemetry-event.schema.json",
+  "title": "Speedtest+ anonymous aggregate event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "eventId",
+    "eventName",
+    "occurredAt",
+    "appVersion",
+    "platform",
+    "osMajor",
+    "deviceClass",
+    "properties"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "eventId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "eventName": {
+      "enum": [
+        "app_open",
+        "screen_view",
+        "feature_used",
+        "test_completed",
+        "theme_applied",
+        "report_opened"
+      ]
+    },
+    "occurredAt": { "type": "string", "format": "date-time" },
+    "appVersion": { "type": "string", "minLength": 1, "maxLength": 32 },
+    "platform": { "enum": ["android", "ios"] },
+    "osMajor": { "type": "integer", "minimum": 7, "maximum": 99 },
+    "deviceClass": { "enum": ["compact_phone", "phone", "large_phone", "tablet", "unknown"] },
+    "properties": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "screen": {
+          "enum": ["speed", "video", "results", "controls", "guide", "settings", "other"]
+        },
+        "feature": {
+          "enum": ["profiles", "themes", "sharing", "csv", "updates", "bug_report", "other"]
+        },
+        "testKind": { "enum": ["speed", "video"] },
+        "success": { "type": "boolean" },
+        "durationBucket": { "enum": ["under_5s", "5_to_15s", "15_to_60s", "over_60s"] },
+        "themeSource": { "enum": ["built_in", "shared_code"] }
+      }
+    }
+  }
+}

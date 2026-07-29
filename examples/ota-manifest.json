@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "channel": "stable",
+  "versionCode": 100,
+  "versionName": "1.0.0",
+  "packageName": "tech.example.speedtestplus",
+  "apkUrl": "https://downloads.example.invalid/SpeedtestPlus.apk",
+  "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "sizeBytes": 12345678,
+  "notes": "Example manifest only; this URL does not host an APK."
+}

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speedtest.example.invalid/schemas/bug-report.schema.json",
+  "title": "User-reviewed Speedtest+ bug report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "reportId",
+    "createdAt",
+    "summary",
+    "steps",
+    "expected",
+    "observed",
+    "appVersion",
+    "platform",
+    "osMajor",
+    "deviceClass"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "reportId": { "type": "string", "format": "uuid" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "summary": { "type": "string", "minLength": 3, "maxLength": 160 },
+    "steps": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "expected": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "observed": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "appVersion": { "type": "string", "minLength": 1, "maxLength": 32 },
+    "platform": { "enum": ["android", "ios"] },
+    "osMajor": { "type": "integer", "minimum": 7, "maximum": 99 },
+    "deviceClass": { "enum": ["compact_phone", "phone", "large_phone", "tablet", "unknown"] },
+    "contact": { "type": ["string", "null"], "maxLength": 254 },
+    "includeDiagnostics": { "type": "boolean", "default": false },
+    "diagnostics": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "screen": { "type": "string", "maxLength": 40 },
+        "orientation": { "enum": ["portrait", "landscape", "unknown"] },
+        "fontScaleBucket": { "enum": ["normal", "large", "extra_large", "unknown"] },
+        "lastOperation": { "type": "string", "maxLength": 80 }
+      }
+    }
+  }
+}

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speedtest.example.invalid/schemas/theme-code.schema.json",
+  "title": "Speedtest+ shareable theme",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "name",
+    "background",
+    "surface",
+    "primaryText",
+    "mutedText",
+    "divider",
+    "downloadStart",
+    "downloadEnd",
+    "uploadStart",
+    "uploadEnd"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "name": { "type": "string", "minLength": 1, "maxLength": 24 },
+    "background": { "$ref": "#/$defs/color" },
+    "surface": { "$ref": "#/$defs/color" },
+    "primaryText": { "$ref": "#/$defs/color" },
+    "mutedText": { "$ref": "#/$defs/color" },
+    "divider": { "$ref": "#/$defs/color" },
+    "downloadStart": { "$ref": "#/$defs/color" },
+    "downloadEnd": { "$ref": "#/$defs/color" },
+    "uploadStart": { "$ref": "#/$defs/color" },
+    "uploadEnd": { "$ref": "#/$defs/color" }
+  },
+  "$defs": {
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{8}$"
+    }
+  }
+}

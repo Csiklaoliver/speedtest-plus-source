@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://speedtest.example.invalid/schemas/telemetry-consent.schema.json",
+  "title": "Local telemetry consent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "status", "policyVersion", "decidedAt"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "status": { "enum": ["unknown", "declined", "granted"] },
+    "policyVersion": { "type": "integer", "minimum": 1 },
+    "decidedAt": { "type": ["string", "null"], "format": "date-time" }
+  }
+}

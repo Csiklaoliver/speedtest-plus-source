@@ -1,0 +1,13 @@
+{
+  "name": "speedtestplus-original-source",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Clean-room Speedtest+ helpers, contracts, tests, and documentation",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test tests/public-package.test.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

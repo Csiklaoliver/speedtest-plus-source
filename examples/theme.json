@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "name": "Ocean Night",
+  "background": "#FF07131F",
+  "surface": "#FF10283A",
+  "primaryText": "#FFFFFFFF",
+  "mutedText": "#FFA6B7C8",
+  "divider": "#33FFFFFF",
+  "downloadStart": "#FF00D4FF",
+  "downloadEnd": "#FF00F0B5",
+  "uploadStart": "#FF7C3AED",
+  "uploadEnd": "#FFF472B6"
+}

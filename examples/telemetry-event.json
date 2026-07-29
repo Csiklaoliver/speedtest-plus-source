@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "eventId": "5cb8b5b8-29c9-4fa9-8ab8-f3a99c81c107",
+  "eventName": "feature_used",
+  "occurredAt": "2026-07-29T12:00:00Z",
+  "appVersion": "1.4.0",
+  "platform": "android",
+  "osMajor": 16,
+  "deviceClass": "large_phone",
+  "properties": {
+    "screen": "controls",
+    "feature": "themes",
+    "success": true
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "reportId": "2e6c8b0d-68ec-4c58-b8c7-a5fb5af3ddf5",
+  "createdAt": "2026-07-29T12:05:00Z",
+  "summary": "Controls overlap at large font scale",
+  "steps": "Open Controls, set system font scale to extra large, then rotate.",
+  "expected": "Every control remains reachable by scrolling.",
+  "observed": "The final action row overlaps the theme preview.",
+  "appVersion": "1.4.0",
+  "platform": "android",
+  "osMajor": 16,
+  "deviceClass": "compact_phone",
+  "contact": null,
+  "includeDiagnostics": true,
+  "diagnostics": {
+    "screen": "controls",
+    "orientation": "landscape",
+    "fontScaleBucket": "extra_large",
+    "lastOperation": "rotate"
+  }
+}
