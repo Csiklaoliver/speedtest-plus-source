@@ -9,7 +9,7 @@ helpers. It provides portable logic and contracts for:
 - privacy-preserving usage-event and bug-report contracts;
 - custom theme codes with integrity checks;
 - a signed-update manifest contract; and
-- Android integration and future iOS portability guidance.
+- Android integration and a review-ready iOS extension source tree.
 
 > **Important:** customized values are local simulation and presentation
 > controls. They are not independently measured network performance and are
@@ -18,14 +18,15 @@ helpers. It provides portable logic and contracts for:
 > service-level claims, fraud, or any other deceptive purpose.
 
 It is deliberately **not** a buildable copy of any third-party application.
-You must supply your own legally obtained base APK and perform integration
-locally. No third-party APK, decoded code/resources, signing material, or
+You must supply your own legally obtained base APK or decrypted IPA and perform
+integration locally. No third-party APK, IPA, decoded resources, signing material, or
 credentials belong in this repository.
 
 ## Requirements
 
 - JDK 8 or newer
 - Node.js 18 or newer
+- macOS, Xcode, and Theos only when compiling the optional iOS extension
 
 ## Verify
 
@@ -37,14 +38,25 @@ The verification suite compiles the dependency-free Java core, runs behavioral
 tests, parses all JSON contracts/examples, and scans the public tree for
 forbidden binaries, absolute local paths, and common secret patterns.
 
+The iOS extension has additional checks:
+
+```sh
+cd ios
+python3 Scripts/verify_project.py
+python3 -m unittest discover -s Tests -v
+python3 Scripts/verify_objc_syntax.py
+```
+
 ## Layout
 
-- `src/main/java/` — original, platform-neutral Java helpers.
-- `schemas/` — JSON Schema contracts for app/server boundaries.
-- `contracts/openapi.yaml` — minimal HTTP API contract.
-- `examples/` — safe payload examples.
-- `tests/` — behavioral and public-tree tests.
-- `docs/` — architecture, privacy, integration, and iOS planning.
+- `src/main/java/` - original, platform-neutral Java helpers.
+- `ios/` - independently written iOS tweak source, runtime inspection tools,
+  build instructions, and reviewer checklist.
+- `schemas/` - JSON Schema contracts for app/server boundaries.
+- `contracts/openapi.yaml` - minimal HTTP API contract.
+- `examples/` - safe payload examples.
+- `tests/` - behavioral and public-tree tests.
+- `docs/` - architecture, privacy, and integration guidance.
 
 ## Scope and safety
 
@@ -59,7 +71,7 @@ security reports.
 
 Use the project only for lawful UI testing, demonstrations, accessibility
 checks, and clearly disclosed simulations. A shared/exported customized result
-should be labeled “simulated” or “customized” so another person cannot mistake
+should be labeled "simulated" or "customized" so another person cannot mistake
 it for a measurement.
 
 See [NOTICE.md](NOTICE.md) for the trademark and non-affiliation disclaimer.

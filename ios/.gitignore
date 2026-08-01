@@ -1,0 +1,10 @@
+.theos/
+packages/
+build/
+reference/
+*.deb
+*.ipa
+*.dylib
+.DS_Store
+__pycache__/
+*.pyc

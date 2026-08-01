@@ -1,0 +1,48 @@
+name: iOS source checks
+
+on:
+  push:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-static-and-build.yml"
+  pull_request:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-static-and-build.yml"
+
+jobs:
+  verify-source:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify source boundary
+        run: python3 Scripts/verify_project.py
+      - name: Test curve and source contracts
+        run: python3 -m unittest discover -s Tests -v
+      - name: Install syntax parser
+        run: python3 -m pip install tree-sitter-language-pack
+      - name: Parse Objective-C sources
+        run: python3 Scripts/verify_objc_syntax.py
+
+  compile-tweak:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install build requirements
+        run: brew install ldid make
+      - name: Install Theos
+        run: git clone --recursive --depth 1 https://github.com/theos/theos.git "$RUNNER_TEMP/theos"
+      - name: Compile unsigned package
+        env:
+          THEOS: ${{ runner.temp }}/theos
+        run: make package FINALPACKAGE=1
+
