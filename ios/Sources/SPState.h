@@ -16,6 +16,7 @@ FOUNDATION_EXPORT NSString * const SPThemeDidChangeNotification;
 @property(nonatomic, readonly) BOOL introSeen;
 @property(nonatomic, readonly) BOOL panelHidden;
 @property(nonatomic, readonly) BOOL updateChecksEnabled;
+@property(nonatomic, readonly, getter=isTestActive) BOOL testActive;
 @property(nonatomic, readonly, nullable) NSString *lastPromptedUpdateVersion;
 
 + (instancetype)shared;
@@ -37,6 +38,10 @@ FOUNDATION_EXPORT NSString * const SPThemeDidChangeNotification;
 - (void)setStage:(NSInteger)stage;
 - (NSInteger)stage;
 - (BOOL)hasSpeedOverrideForDirection:(SPDirection)direction;
+- (BOOL)runHasSpeedOverrideForDirection:(SPDirection)direction;
+- (nullable NSNumber *)runNumberForKey:(NSString *)key;
+- (nullable NSString *)runStringForKey:(NSString *)key;
+- (nullable NSDictionary<NSString *, id> *)consumePendingLocalResult;
 - (double)displayMbpsForDirection:(SPDirection)direction measuredMbps:(double)measured progress:(double)progress;
 - (double)finalMbpsForDirection:(SPDirection)direction measuredMbps:(double)measured;
 - (void)completeTestWithMeasuredDownload:(double)download

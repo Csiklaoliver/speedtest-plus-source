@@ -105,7 +105,7 @@ def main() -> int:
 
         plist["CFBundleDisplayName"] = "Speedtest+"
         plist["CFBundleName"] = "Speedtest+"
-        plist["SpeedtestPlusVersion"] = "0.1.1"
+        plist["SpeedtestPlusVersion"] = "0.1.2"
         plist_data = plistlib.dumps(plist, fmt=plistlib.FMT_BINARY, sort_keys=False)
 
         with zipfile.ZipFile(args.output, "w", allowZip64=True) as target:

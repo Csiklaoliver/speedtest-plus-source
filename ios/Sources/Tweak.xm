@@ -1,6 +1,7 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
+#import <limits.h>
 #import "SPState.h"
 #import "SPTheme.h"
 #import "SPControlsViewController.h"
@@ -9,12 +10,36 @@
 
 // Confirmed from the 7.0.5 suiteStagePrepared switch:
 // 1 = latency, 2 = download, 3 = upload.
+static const NSInteger SPStageLatency = 1;
 static const NSInteger SPStageDownload = 2;
 static const NSInteger SPStageUpload = 3;
 static const NSInteger SPButtonTag = 0x53505031;
 static const NSInteger SPBadgeTag = 0x53505032;
+static const void *SPObserverTokenKey = &SPObserverTokenKey;
 
 static id SPObject(id object, SEL selector);
+
+@interface SPObserverToken : NSObject
+@property(nonatomic, strong) id token;
+@end
+
+@implementation SPObserverToken
+- (void)dealloc {
+    if (_token) [[NSNotificationCenter defaultCenter] removeObserver:_token];
+}
+@end
+
+static id SPKVCValue(id object, NSString *key) {
+    if (!object || !key.length) return nil;
+    @try { return [object valueForKey:key]; }
+    @catch (__unused NSException *exception) { return nil; }
+}
+
+static void SPSetKVCValue(id object, NSString *key, id value) {
+    if (!object || !key.length || !value) return;
+    @try { [object setValue:value forKey:key]; }
+    @catch (__unused NSException *exception) {}
+}
 
 static double SPDouble(id object, SEL selector, double fallback) {
     if (!object || ![object respondsToSelector:selector]) return fallback;
@@ -38,6 +63,20 @@ static void SPSetObject(id object, SEL selector, id value) {
     if (object && value && [object respondsToSelector:selector]) ((void (*)(id, SEL, id))objc_msgSend)(object, selector, value);
 }
 
+static long long SPRawFromMbps(double mbps) {
+    if (!isfinite(mbps) || mbps <= 0.0) return 0;
+    long double raw = (long double)mbps * 1000.0L;
+    if (raw >= (long double)LLONG_MAX) return LLONG_MAX;
+    return (long long)llround((double)raw);
+}
+
+static long long SPScaledRaw(long long nativeRaw, long long measuredRaw, long long shownRaw) {
+    if (nativeRaw <= 0 || measuredRaw <= 0 || shownRaw <= 0) return shownRaw;
+    long double scaled = (long double)nativeRaw * (long double)shownRaw / (long double)measuredRaw;
+    if (scaled >= (long double)LLONG_MAX) return LLONG_MAX;
+    return (long long)llround((double)scaled);
+}
+
 static id SPPacketLossModel(NSNumber *loss) {
     Class lossClass = NSClassFromString(@"ReportPacketLossModel");
     if (!loss || !lossClass) return nil;
@@ -55,7 +94,7 @@ static NSArray *SPGraphEntries(NSArray<NSDictionary<NSString *, NSNumber *> *> *
     NSMutableArray *entries = [NSMutableArray arrayWithCapacity:samples.count];
     SEL initializer = NSSelectorFromString(@"initWithSpeed:progress:");
     for (NSDictionary *sample in samples) {
-        long long rawSpeed = (long long)llround([sample[@"speedMbps"] doubleValue] * 1000.0);
+        long long rawSpeed = SPRawFromMbps([sample[@"speedMbps"] doubleValue]);
         double progress = [sample[@"progress"] doubleValue];
         id allocated = [entryClass alloc];
         id entry = [allocated respondsToSelector:initializer] ? ((id (*)(id, SEL, long long, double))objc_msgSend)(allocated, initializer, rawSpeed, progress) : nil;
@@ -67,11 +106,11 @@ static NSArray *SPGraphEntries(NSArray<NSDictionary<NSString *, NSNumber *> *> *
 static id SPGraphSamplesForResult(id savedResult, NSDictionary *last) {
     Class samplesClass = NSClassFromString(@"GraphSamplesModel");
     if (!samplesClass) return nil;
-    id existing = SPObject(savedResult, NSSelectorFromString(@"graphSamples"));
+    id existing = SPKVCValue(savedResult, @"graphSamples");
     id download = SPObject(existing, NSSelectorFromString(@"download"));
     id upload = SPObject(existing, NSSelectorFromString(@"upload"));
-    if ([SPState.shared hasSpeedOverrideForDirection:SPDirectionDownload]) download = SPGraphEntries(last[@"download_samples"]);
-    if ([SPState.shared hasSpeedOverrideForDirection:SPDirectionUpload]) upload = SPGraphEntries(last[@"upload_samples"]);
+    if ([last[@"override_download"] boolValue]) download = SPGraphEntries(last[@"download_samples"]);
+    if ([last[@"override_upload"] boolValue]) upload = SPGraphEntries(last[@"upload_samples"]);
     SEL initializer = NSSelectorFromString(@"initWithDownload:upload:");
     id allocated = [samplesClass alloc];
     return [allocated respondsToSelector:initializer] ? ((id (*)(id, SEL, id, id))objc_msgSend)(allocated, initializer, download, upload) : nil;
@@ -84,12 +123,12 @@ static id SPObject(id object, SEL selector) {
 
 static NSDictionary<NSString *, id> *SPResultDictionaryFromModel(id model) {
     if (!model) return @{};
-    id downloadRaw = SPObject(model, NSSelectorFromString(@"download"));
-    id uploadRaw = SPObject(model, NSSelectorFromString(@"upload"));
-    id ping = SPObject(model, NSSelectorFromString(@"latency"));
-    id jitter = SPObject(model, NSSelectorFromString(@"jitter"));
-    id sent = SPObject(model, NSSelectorFromString(@"packetsSent"));
-    id received = SPObject(model, NSSelectorFromString(@"packetsReceived"));
+    id downloadRaw = SPKVCValue(model, @"download");
+    id uploadRaw = SPKVCValue(model, @"upload");
+    id ping = SPKVCValue(model, @"latency");
+    id jitter = SPKVCValue(model, @"jitter");
+    id sent = SPKVCValue(model, @"packetsSent");
+    id received = SPKVCValue(model, @"packetsReceived");
     id loss = NSNull.null;
     if ([sent respondsToSelector:@selector(doubleValue)] && [sent doubleValue] > 0 && [received respondsToSelector:@selector(doubleValue)]) {
         loss = @(SPRoundedMbps((1.0 - [received doubleValue] / [sent doubleValue]) * 100.0));
@@ -100,9 +139,9 @@ static NSDictionary<NSString *, id> *SPResultDictionaryFromModel(id model) {
         @"ping_ms": ping ?: NSNull.null,
         @"jitter_ms": jitter ?: NSNull.null,
         @"packet_loss": loss,
-        @"isp": SPObject(model, NSSelectorFromString(@"isp")) ?: @"",
-        @"server_provider": SPObject(model, NSSelectorFromString(@"serverSponsor")) ?: @"",
-        @"server_location": SPObject(model, NSSelectorFromString(@"serverName")) ?: @"",
+        @"isp": SPKVCValue(model, @"isp") ?: @"",
+        @"server_provider": SPKVCValue(model, @"serverSponsor") ?: @"",
+        @"server_location": SPKVCValue(model, @"serverName") ?: @"",
     };
 }
 
@@ -140,12 +179,24 @@ static UILabel *SPDisplayLabel(id object, NSString *getter) {
     return best;
 }
 
+static NSNumber *SPNumberObjectFromLabel(UILabel *label) {
+    NSString *text = [label.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (!text.length || [text rangeOfCharacterFromSet:NSCharacterSet.decimalDigitCharacterSet].location == NSNotFound) return nil;
+    NSNumberFormatter *localized = [NSNumberFormatter new];
+    localized.numberStyle = NSNumberFormatterDecimalStyle;
+    localized.locale = NSLocale.currentLocale;
+    NSNumber *number = [localized numberFromString:text];
+    if (!number) {
+        NSNumberFormatter *invariant = [NSNumberFormatter new];
+        invariant.numberStyle = NSNumberFormatterDecimalStyle;
+        invariant.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+        number = [invariant numberFromString:text];
+    }
+    return number && isfinite(number.doubleValue) ? number : nil;
+}
+
 static double SPNumberFromLabel(UILabel *label) {
-    if (!label.text.length) return 0.0;
-    NSString *normalized = [[label.text stringByReplacingOccurrencesOfString:@"," withString:@""] stringByReplacingOccurrencesOfString:@" " withString:@""];
-    NSScanner *scanner = [NSScanner scannerWithString:normalized];
-    double result = 0;
-    return [scanner scanDouble:&result] ? result : 0.0;
+    return [SPNumberObjectFromLabel(label) doubleValue];
 }
 
 static NSString *SPFormatMbps(double value) {
@@ -163,6 +214,21 @@ static void SPApplyIdentityLabels(id controller) {
     if (location) SPLabel(controller, @"endOfTestServerLocationLabel").text = location;
 }
 
+static void SPApplyRunIdentityLabels(id controller) {
+    NSString *isp = [SPState.shared runStringForKey:@"isp"];
+    NSString *provider = [SPState.shared runStringForKey:@"server_provider"];
+    NSString *location = [SPState.shared runStringForKey:@"server_location"];
+    if (isp) SPLabel(controller, @"endOfTestISPLabel").text = isp;
+    if (provider) SPLabel(controller, @"endOfTestServerNameLabel").text = provider;
+    if (location) SPLabel(controller, @"endOfTestServerLocationLabel").text = location;
+}
+
+static void SPApplyLastResultIdentityLabels(id controller, NSDictionary *result) {
+    if ([result[@"override_isp"] boolValue]) SPLabel(controller, @"endOfTestISPLabel").text = result[@"isp"];
+    if ([result[@"override_server_provider"] boolValue]) SPLabel(controller, @"endOfTestServerNameLabel").text = result[@"server_provider"];
+    if ([result[@"override_server_location"] boolValue]) SPLabel(controller, @"endOfTestServerLocationLabel").text = result[@"server_location"];
+}
+
 static void SPHideOfficialUpdateBanner(id controller) {
     UILabel *message = SPLabel(controller, @"userMessageLabel");
     NSString *text = message.text.lowercaseString;
@@ -171,12 +237,40 @@ static void SPHideOfficialUpdateBanner(id controller) {
     }
 }
 
-static UIViewController *SPPresenter(id object) {
-    if ([object isKindOfClass:UIViewController.class]) return object;
-    UIWindow *window = UIApplication.sharedApplication.keyWindow;
-    UIViewController *controller = window.rootViewController;
-    while (controller.presentedViewController) controller = controller.presentedViewController;
+static UIWindow *SPActiveWindow(void) {
+    UIApplication *application = UIApplication.sharedApplication;
+    if (@available(iOS 13.0, *)) {
+        for (UIScene *scene in application.connectedScenes) {
+            if (![scene isKindOfClass:UIWindowScene.class] ||
+                (scene.activationState != UISceneActivationStateForegroundActive &&
+                 scene.activationState != UISceneActivationStateForegroundInactive)) continue;
+            UIWindowScene *windowScene = (UIWindowScene *)scene;
+            for (UIWindow *window in windowScene.windows) if (window.isKeyWindow) return window;
+            for (UIWindow *window in windowScene.windows) if (!window.hidden && window.alpha > 0.0) return window;
+        }
+    }
+    for (UIWindow *window in application.windows) if (window.isKeyWindow) return window;
+    return application.windows.firstObject;
+}
+
+static UIViewController *SPTopController(UIViewController *controller) {
+    while (controller) {
+        if (controller.presentedViewController && !controller.presentedViewController.isBeingDismissed) {
+            controller = controller.presentedViewController;
+        } else if ([controller isKindOfClass:UINavigationController.class]) {
+            controller = ((UINavigationController *)controller).visibleViewController;
+        } else if ([controller isKindOfClass:UITabBarController.class]) {
+            controller = ((UITabBarController *)controller).selectedViewController;
+        } else {
+            break;
+        }
+    }
     return controller;
+}
+
+static UIViewController *SPPresenter(id object) {
+    UIViewController *controller = [object isKindOfClass:UIViewController.class] ? object : SPActiveWindow().rootViewController;
+    return SPTopController(controller);
 }
 
 static void SPPresentUnlock(UIViewController *presenter) {
@@ -185,11 +279,13 @@ static void SPPresentUnlock(UIViewController *presenter) {
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) { field.placeholder = @"Password"; field.secureTextEntry = YES; }];
     [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
     [alert addAction:[UIAlertAction actionWithTitle:@"Unlock" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-        if ([SPState.shared unlockWithPassword:alert.textFields.firstObject.text ?: @""]) [SPControlsViewController presentFrom:presenter];
+        if ([SPState.shared unlockWithPassword:alert.textFields.firstObject.text ?: @""]) {
+            dispatch_async(dispatch_get_main_queue(), ^{ [SPControlsViewController presentFrom:SPPresenter(presenter)]; });
+        }
         else {
             UIAlertController *failed = [UIAlertController alertControllerWithTitle:@"Speedtest+" message:@"Incorrect password." preferredStyle:UIAlertControllerStyleAlert];
             [failed addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
-            [presenter presentViewController:failed animated:YES completion:nil];
+            dispatch_async(dispatch_get_main_queue(), ^{ [SPPresenter(presenter) presentViewController:failed animated:YES completion:nil]; });
         }
     }]];
     [presenter presentViewController:alert animated:YES completion:nil];
@@ -252,7 +348,7 @@ static void SPRefreshBadge(UIViewController *controller) {
     NSInteger count = SPState.shared.activeOverrideCount;
     button.hidden = SPState.shared.panelHidden;
     badge.hidden = count == 0 || SPState.shared.panelHidden;
-    badge.text = [NSString stringWithFormat:@"CUSTOM • %ld", (long)count];
+    badge.text = [NSString stringWithFormat:@"CUSTOM \u2022 %ld", (long)count];
 }
 
 static void SPAttachControls(UIViewController *controller) {
@@ -283,11 +379,6 @@ static void SPAttachControls(UIViewController *controller) {
     badge.textAlignment = NSTextAlignmentCenter;
     [controller.view addSubview:badge];
 
-    UILongPressGestureRecognizer *longPress = [[UILongPressGestureRecognizer alloc] initWithTarget:target action:@selector(longPressed:)];
-    longPress.minimumPressDuration = 0.75;
-    longPress.cancelsTouchesInView = NO;
-    [controller.view addGestureRecognizer:longPress];
-
     [NSLayoutConstraint activateConstraints:@[
         [button.trailingAnchor constraintEqualToAnchor:controller.view.safeAreaLayoutGuide.trailingAnchor constant:-12],
         [button.bottomAnchor constraintEqualToAnchor:controller.view.safeAreaLayoutGuide.bottomAnchor constant:-70],
@@ -298,7 +389,13 @@ static void SPAttachControls(UIViewController *controller) {
         [badge.widthAnchor constraintGreaterThanOrEqualToConstant:68],
         [badge.heightAnchor constraintEqualToConstant:18]
     ]];
-    [[NSNotificationCenter defaultCenter] addObserverForName:SPStateDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) { SPRefreshBadge(controller); }];
+    __weak UIViewController *weakController = controller;
+    SPObserverToken *observer = [SPObserverToken new];
+    observer.token = [[NSNotificationCenter defaultCenter] addObserverForName:SPStateDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
+        UIViewController *strongController = weakController;
+        if (strongController) SPRefreshBadge(strongController);
+    }];
+    objc_setAssociatedObject(controller, SPObserverTokenKey, observer, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     SPRefreshBadge(controller);
 }
 
@@ -357,10 +454,16 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
         gesture.cancelsTouchesInView = NO;
         [providerView addGestureRecognizer:gesture];
     }
-    [[NSNotificationCenter defaultCenter] addObserverForName:SPStateDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
-        SPRefreshBadge(presenter);
-        SPApplyProviderLabels(hostController);
+    __weak UIViewController *weakPresenter = presenter;
+    __weak id weakHost = hostController;
+    SPObserverToken *observer = [SPObserverToken new];
+    observer.token = [[NSNotificationCenter defaultCenter] addObserverForName:SPStateDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
+        UIViewController *strongPresenter = weakPresenter;
+        id strongHost = weakHost;
+        if (strongPresenter) SPRefreshBadge(strongPresenter);
+        if (strongHost) SPApplyProviderLabels(strongHost);
     }];
+    objc_setAssociatedObject(hostController, SPObserverTokenKey, observer, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     SPApplyProviderLabels(hostController);
     SPRefreshBadge(presenter);
 }
@@ -389,83 +492,86 @@ static void SPExpandChartAxesInView(UIView *view, double requestedMaximum) {
 }
 
 static void SPMutateTransferProgress(id parameters) {
-    if (!SPState.shared.active) return;
     NSInteger stage = [parameters respondsToSelector:@selector(stageType)] ? ((unsigned char (*)(id, SEL))objc_msgSend)(parameters, @selector(stageType)) : SPState.shared.stage;
     SPDirection direction;
     if (stage == SPStageDownload) direction = SPDirectionDownload;
     else if (stage == SPStageUpload) direction = SPDirectionUpload;
     else return;
-    if (![SPState.shared hasSpeedOverrideForDirection:direction]) return;
+    id packetLoss = SPPacketLossModel([SPState.shared runNumberForKey:@"packet_loss"]);
+    if (packetLoss) SPSetObject(parameters, @selector(setPacketLoss:), packetLoss);
+    if (![SPState.shared runHasSpeedOverrideForDirection:direction]) return;
     double progress = SPDouble(parameters, @selector(progress), 0.0);
     long long measuredRaw = SPLongLong(parameters, @selector(speed), 0);
+    long long nativeMST = SPLongLong(parameters, @selector(speedMST), measuredRaw);
+    long long nativeSuper = SPLongLong(parameters, @selector(speedSuperSpeed), measuredRaw);
+    long long nativeAverage = SPLongLong(parameters, @selector(speedAverage), measuredRaw);
     double measuredMbps = (double)measuredRaw / 1000.0;
     double shownMbps = [SPState.shared displayMbpsForDirection:direction measuredMbps:measuredMbps progress:progress];
-    long long raw = (long long)llround(shownMbps * 1000.0);
+    long long raw = SPRawFromMbps(shownMbps);
     SPSetLongLong(parameters, @selector(setSpeed:), raw);
-    SPSetLongLong(parameters, @selector(setSpeedMST:), raw);
-    SPSetLongLong(parameters, @selector(setSpeedSuperSpeed:), raw);
-    SPSetLongLong(parameters, @selector(setSpeedAverage:), raw);
-    id packetLoss = SPPacketLossModel([SPState.shared numberForKey:@"packet_loss"]);
-    if (packetLoss) SPSetObject(parameters, @selector(setPacketLoss:), packetLoss);
+    SPSetLongLong(parameters, @selector(setSpeedMST:), SPScaledRaw(nativeMST, measuredRaw, raw));
+    SPSetLongLong(parameters, @selector(setSpeedSuperSpeed:), SPScaledRaw(nativeSuper, measuredRaw, raw));
+    SPSetLongLong(parameters, @selector(setSpeedAverage:), SPScaledRaw(nativeAverage, measuredRaw, raw));
 }
 
 static void SPMutateTransferCompletion(id parameters) {
-    if (!SPState.shared.active) return;
     NSInteger stage = [parameters respondsToSelector:@selector(stageType)] ? ((unsigned char (*)(id, SEL))objc_msgSend)(parameters, @selector(stageType)) : SPState.shared.stage;
     SPDirection direction;
     if (stage == SPStageDownload) direction = SPDirectionDownload;
     else if (stage == SPStageUpload) direction = SPDirectionUpload;
     else return;
-    if (![SPState.shared hasSpeedOverrideForDirection:direction]) return;
-    double measuredMbps = (double)SPLongLong(parameters, @selector(speed), 0) / 1000.0;
-    long long raw = (long long)llround([SPState.shared finalMbpsForDirection:direction measuredMbps:measuredMbps] * 1000.0);
+    if (![SPState.shared runHasSpeedOverrideForDirection:direction]) return;
+    long long measuredRaw = SPLongLong(parameters, @selector(speed), 0);
+    long long nativeMST = SPLongLong(parameters, @selector(speedMST), measuredRaw);
+    long long nativeSuper = SPLongLong(parameters, @selector(speedSuperSpeed), measuredRaw);
+    long long nativeAverage = SPLongLong(parameters, @selector(speedAverage), measuredRaw);
+    double measuredMbps = (double)measuredRaw / 1000.0;
+    long long raw = SPRawFromMbps([SPState.shared finalMbpsForDirection:direction measuredMbps:measuredMbps]);
     SPSetLongLong(parameters, @selector(setSpeed:), raw);
-    SPSetLongLong(parameters, @selector(setSpeedMST:), raw);
-    SPSetLongLong(parameters, @selector(setSpeedSuperSpeed:), raw);
-    SPSetLongLong(parameters, @selector(setSpeedAverage:), raw);
+    SPSetLongLong(parameters, @selector(setSpeedMST:), SPScaledRaw(nativeMST, measuredRaw, raw));
+    SPSetLongLong(parameters, @selector(setSpeedSuperSpeed:), SPScaledRaw(nativeSuper, measuredRaw, raw));
+    SPSetLongLong(parameters, @selector(setSpeedAverage:), SPScaledRaw(nativeAverage, measuredRaw, raw));
 }
 
 static void SPMutateLatency(id parameters) {
-    if (!SPState.shared.active) return;
-    NSNumber *ping = [SPState.shared numberForKey:@"ping"];
-    NSNumber *jitter = [SPState.shared numberForKey:@"jitter"];
+    NSNumber *ping = [SPState.shared runNumberForKey:@"ping"];
+    NSNumber *jitter = [SPState.shared runNumberForKey:@"jitter"];
     if (ping) SPSetDouble(parameters, @selector(setPing:), ping.doubleValue);
     if (jitter) SPSetDouble(parameters, @selector(setJitter:), jitter.doubleValue);
 }
 
-static void SPMutateSavedModel(id model) {
-    if (!SPState.shared.active || !model) return;
-    NSDictionary *last = SPState.shared.lastResult;
+static void SPMutateSavedModel(id model, NSDictionary *last) {
+    if (!model) return;
     @try {
-        if ([SPState.shared hasSpeedOverrideForDirection:SPDirectionDownload]) SPSetObject(model, NSSelectorFromString(@"setDownload:"), @(llround([last[@"download_mbps"] doubleValue] * 1000.0)));
-        if ([SPState.shared hasSpeedOverrideForDirection:SPDirectionUpload]) SPSetObject(model, NSSelectorFromString(@"setUpload:"), @(llround([last[@"upload_mbps"] doubleValue] * 1000.0)));
-        NSNumber *ping = [SPState.shared numberForKey:@"ping"];
-        NSNumber *jitter = [SPState.shared numberForKey:@"jitter"];
+        if ([last[@"override_download"] boolValue]) SPSetKVCValue(model, @"download", @(SPRawFromMbps([last[@"download_mbps"] doubleValue])));
+        if ([last[@"override_upload"] boolValue]) SPSetKVCValue(model, @"upload", @(SPRawFromMbps([last[@"upload_mbps"] doubleValue])));
+        NSNumber *ping = [last[@"override_ping"] boolValue] ? last[@"ping_ms"] : nil;
+        NSNumber *jitter = [last[@"override_jitter"] boolValue] ? last[@"jitter_ms"] : nil;
         if (ping) {
-            SPSetObject(model, NSSelectorFromString(@"setLatency:"), ping);
-            SPSetObject(model, NSSelectorFromString(@"setIdleIqmLatency:"), ping);
+            SPSetKVCValue(model, @"latency", ping);
+            SPSetKVCValue(model, @"idleIqmLatency", ping);
         }
         if (jitter) {
-            SPSetObject(model, NSSelectorFromString(@"setJitter:"), jitter);
-            SPSetObject(model, NSSelectorFromString(@"setDownloadJitter:"), jitter);
-            SPSetObject(model, NSSelectorFromString(@"setUploadJitter:"), jitter);
+            SPSetKVCValue(model, @"jitter", jitter);
+            SPSetKVCValue(model, @"downloadJitter", jitter);
+            SPSetKVCValue(model, @"uploadJitter", jitter);
         }
-        NSString *isp = [SPState.shared stringForKey:@"isp"];
-        NSString *provider = [SPState.shared stringForKey:@"server_provider"];
-        NSString *location = [SPState.shared stringForKey:@"server_location"];
-        SPSetObject(model, NSSelectorFromString(@"setIsp:"), isp);
-        SPSetObject(model, NSSelectorFromString(@"setServerSponsor:"), provider);
-        SPSetObject(model, NSSelectorFromString(@"setServerName:"), location);
+        NSString *isp = [last[@"override_isp"] boolValue] ? last[@"isp"] : nil;
+        NSString *provider = [last[@"override_server_provider"] boolValue] ? last[@"server_provider"] : nil;
+        NSString *location = [last[@"override_server_location"] boolValue] ? last[@"server_location"] : nil;
+        SPSetKVCValue(model, @"isp", isp);
+        SPSetKVCValue(model, @"serverSponsor", provider);
+        SPSetKVCValue(model, @"serverName", location);
 
-        NSNumber *loss = [SPState.shared numberForKey:@"packet_loss"];
+        NSNumber *loss = [last[@"override_packet_loss"] boolValue] ? last[@"packet_loss"] : nil;
         if (loss) {
             NSInteger sent = loss.doubleValue >= 100.0 ? 10000 : 1000;
             NSInteger received = loss.doubleValue >= 100.0 ? 1 : 1000 - (NSInteger)llround(loss.doubleValue * 10.0);
-            SPSetObject(model, NSSelectorFromString(@"setPacketsSent:"), @(sent));
-            SPSetObject(model, NSSelectorFromString(@"setPacketsReceived:"), @(received));
+            SPSetKVCValue(model, @"packetsSent", @(sent));
+            SPSetKVCValue(model, @"packetsReceived", @(received));
         }
         id graphSamples = SPGraphSamplesForResult(model, last);
-        if (graphSamples) SPSetObject(model, NSSelectorFromString(@"setGraphSamples:"), graphSamples);
+        if (graphSamples) SPSetKVCValue(model, @"graphSamples", graphSamples);
     } @catch (__unused NSException *exception) {}
 }
 
@@ -500,10 +606,18 @@ static void HookSpeedViewWillAppear(id self, SEL _cmd, BOOL animated) {
 }
 
 static void (*OrigSuiteStagePrepared)(id, SEL, unsigned char);
-static void HookSuiteStagePrepared(id self, SEL _cmd, unsigned char stage) { [SPState.shared setStage:stage]; OrigSuiteStagePrepared(self, _cmd, stage); }
+static void HookSuiteStagePrepared(id self, SEL _cmd, unsigned char stage) {
+    if (stage == SPStageLatency && !SPState.shared.testActive) [SPState.shared beginTest];
+    [SPState.shared setStage:stage];
+    OrigSuiteStagePrepared(self, _cmd, stage);
+}
 
 static void (*OrigHandleProgress)(id, SEL, id);
-static void HookHandleProgress(id self, SEL _cmd, id parameters) { SPMutateTransferProgress(parameters); OrigHandleProgress(self, _cmd, parameters); }
+static void HookHandleProgress(id self, SEL _cmd, id parameters) {
+    SPMutateTransferProgress(parameters);
+    SPMutateLatency(parameters);
+    OrigHandleProgress(self, _cmd, parameters);
+}
 
 static void (*OrigHandleLoadedLatency)(id, SEL, id);
 static void HookHandleLoadedLatency(id self, SEL _cmd, id parameters) { SPMutateLatency(parameters); OrigHandleLoadedLatency(self, _cmd, parameters); }
@@ -513,15 +627,15 @@ static void HookHandleCompletion(id self, SEL _cmd, id result) {
     SPMutateTransferCompletion(result);
     SPMutateLatency(result);
     OrigHandleCompletion(self, _cmd, result);
-    SPApplyIdentityLabels(self);
+    SPApplyRunIdentityLabels(self);
 }
 
 static void (*OrigSuiteComplete)(id, SEL);
 static void SPCaptureCompletedTest(id self) {
     double download = SPNumberFromLabel(SPDisplayLabel(self, @"downloadResult"));
     double upload = SPNumberFromLabel(SPDisplayLabel(self, @"uploadResult"));
-    NSNumber *ping = @(SPNumberFromLabel(SPDisplayLabel(self, @"pingResult")));
-    NSNumber *jitter = @(SPNumberFromLabel(SPDisplayLabel(self, @"jitterResult")));
+    NSNumber *ping = SPNumberObjectFromLabel(SPDisplayLabel(self, @"pingResult"));
+    NSNumber *jitter = SPNumberObjectFromLabel(SPDisplayLabel(self, @"jitterResult"));
     [SPState.shared completeTestWithMeasuredDownload:download
                                               upload:upload
                                                 ping:ping
@@ -535,13 +649,12 @@ static void SPCaptureCompletedTest(id self) {
 static void HookSuiteComplete(id self, SEL _cmd) {
     SPCaptureCompletedTest(self);
     OrigSuiteComplete(self, _cmd);
-    SPCaptureCompletedTest(self);
     NSDictionary *last = SPState.shared.lastResult;
-    if ([SPState.shared hasSpeedOverrideForDirection:SPDirectionDownload]) SPDisplayLabel(self, @"downloadResult").text = SPFormatMbps([last[@"download_mbps"] doubleValue]);
-    if ([SPState.shared hasSpeedOverrideForDirection:SPDirectionUpload]) SPDisplayLabel(self, @"uploadResult").text = SPFormatMbps([last[@"upload_mbps"] doubleValue]);
-    if ([SPState.shared numberForKey:@"ping"]) SPDisplayLabel(self, @"pingResult").text = [[SPState.shared numberForKey:@"ping"] stringValue];
-    if ([SPState.shared numberForKey:@"jitter"]) SPDisplayLabel(self, @"jitterResult").text = [[SPState.shared numberForKey:@"jitter"] stringValue];
-    SPApplyIdentityLabels(self);
+    if ([last[@"override_download"] boolValue]) SPDisplayLabel(self, @"downloadResult").text = SPFormatMbps([last[@"download_mbps"] doubleValue]);
+    if ([last[@"override_upload"] boolValue]) SPDisplayLabel(self, @"uploadResult").text = SPFormatMbps([last[@"upload_mbps"] doubleValue]);
+    if ([last[@"override_ping"] boolValue]) SPDisplayLabel(self, @"pingResult").text = [last[@"ping_ms"] stringValue];
+    if ([last[@"override_jitter"] boolValue]) SPDisplayLabel(self, @"jitterResult").text = [last[@"jitter_ms"] stringValue];
+    SPApplyLastResultIdentityLabels(self, last);
 }
 
 static void (*OrigGaugeBegin)(id, SEL, id, id);
@@ -574,22 +687,6 @@ static void HookResultDetailsShare(id self, SEL _cmd, id sender) {
     [(UIViewController *)self presentViewController:activity animated:YES completion:nil];
 }
 
-static void (*OrigCompareViewWillAppear)(id, SEL, BOOL);
-static void HookCompareViewWillAppear(id self, SEL _cmd, BOOL animated) {
-    OrigCompareViewWillAppear(self, _cmd, animated);
-    NSDictionary *result = SPState.shared.lastResult;
-    if (result.count) {
-        SPLabel(self, @"downloadValueLabel").text = [NSString stringWithFormat:@"%.1f", [result[@"download_mbps"] doubleValue]];
-        SPLabel(self, @"uploadValueLabel").text = [NSString stringWithFormat:@"%.1f", [result[@"upload_mbps"] doubleValue]];
-        if (result[@"ping_ms"] != NSNull.null) SPLabel(self, @"pingValueLabel").text = [NSString stringWithFormat:@"%.0f", [result[@"ping_ms"] doubleValue]];
-        if ([result[@"server_provider"] length]) SPLabel(self, @"providerNameLabel").text = result[@"server_provider"];
-        if ([result[@"server_location"] length]) SPLabel(self, @"cityLabel").text = result[@"server_location"];
-    }
-    double customMaximum = MAX([result[@"download_mbps"] doubleValue], [result[@"upload_mbps"] doubleValue]) * 1.10;
-    if (customMaximum > 0.0) SPExpandChartAxesInView(((UIViewController *)self).view, customMaximum);
-    SPApplyThemeToController(self);
-}
-
 static void (*OrigResultListViewWillAppear)(id, SEL, BOOL);
 static void HookResultListViewWillAppear(id self, SEL _cmd, BOOL animated) {
     OrigResultListViewWillAppear(self, _cmd, animated);
@@ -602,7 +699,7 @@ static void HookResultListViewWillAppear(id self, SEL _cmd, BOOL animated) {
 static void (*OrigFeedbackViewDidLoad)(id, SEL);
 static void HookFeedbackViewDidLoad(id self, SEL _cmd) {
     OrigFeedbackViewDidLoad(self, _cmd);
-    NSString *isp = [SPState.shared stringForKey:@"isp"];
+    NSString *isp = SPState.shared.active ? [SPState.shared stringForKey:@"isp"] : nil;
     UILabel *title = SPLabel(self, @"titleLabel");
     if (isp.length && title) title.text = [NSString stringWithFormat:@"How would you rate %@?", isp];
     SPApplyThemeToController(self);
@@ -636,6 +733,9 @@ static id HookShareItem(id self, SEL _cmd) {
     return result.count ? [SPShareBuilder plainTextFromResult:result] : OrigShareItem(self, _cmd);
 }
 
+static id HookSuppressedURLItem(id self, SEL _cmd) { return @""; }
+static id HookSuppressedURLActivityItem(id self, SEL _cmd, id controller, id activityType) { return nil; }
+
 static id (*OrigCSVItem)(id, SEL, id, id);
 static id HookCSVItem(id self, SEL _cmd, id controller, id activityType) {
     id original = OrigCSVItem(self, _cmd, controller, activityType);
@@ -643,11 +743,32 @@ static id HookCSVItem(id self, SEL _cmd, id controller, id activityType) {
     return [SPShareBuilder appendSpeedtestColumnsToCSV:original results:SPAllLocalResultDictionaries()];
 }
 
+static id SPRewriteCSVFile(id original) {
+    if (![original isKindOfClass:NSURL.class] || ![(NSURL *)original isFileURL]) return original;
+    NSString *csv = [NSString stringWithContentsOfURL:original encoding:NSUTF8StringEncoding error:nil];
+    if (!csv.length) return original;
+    NSString *rewritten = [SPShareBuilder appendSpeedtestColumnsToCSV:csv results:SPAllLocalResultDictionaries()];
+    NSURL *directory = [NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES];
+    NSURL *output = [directory URLByAppendingPathComponent:[NSString stringWithFormat:@"SpeedtestPlus-%@.csv", NSUUID.UUID.UUIDString]];
+    return [rewritten writeToURL:output atomically:YES encoding:NSUTF8StringEncoding error:nil] ? output : original;
+}
+
+static id (*OrigCSVFileItem)(id, SEL);
+static id HookCSVFileItem(id self, SEL _cmd) { return SPRewriteCSVFile(OrigCSVFileItem(self, _cmd)); }
+static id (*OrigCSVFileActivityItem)(id, SEL, id, id);
+static id HookCSVFileActivityItem(id self, SEL _cmd, id controller, id activityType) {
+    return SPRewriteCSVFile(OrigCSVFileActivityItem(self, _cmd, controller, activityType));
+}
+
 static void (*OrigSaveReportAsResult)(id, SEL, id);
 static void HookSaveReportAsResult(id self, SEL _cmd, id report) {
     OrigSaveReportAsResult(self, _cmd, report);
-    id localResult = SPObject(self, NSSelectorFromString(@"lastSavedResult"));
-    SPMutateSavedModel(localResult);
+    id localResult = SPKVCValue(report, @"speedTestResult");
+    if (!localResult) localResult = SPObject(self, NSSelectorFromString(@"lastSavedResult"));
+    if (!localResult) return;
+    NSDictionary *pending = [SPState.shared consumePendingLocalResult];
+    if (!pending) return;
+    SPMutateSavedModel(localResult, pending);
     if (localResult && [self respondsToSelector:@selector(save)]) ((void (*)(id, SEL))objc_msgSend)(self, @selector(save));
 }
 
@@ -682,8 +803,6 @@ __attribute__((constructor)) static void SpeedtestPlusInitialize(void) {
         SPHook(details, @"viewDidLoad", (IMP)HookResultDetailsViewDidLoad, (IMP *)&OrigGenericViewDidLoad);
         SPHook(details, @"shareResult:", (IMP)HookResultDetailsShare, (IMP *)&OrigResultDetailsShare);
 
-        Class compare = NSClassFromString(@"_TtC9SpeedTest33CompareResultsOfferViewController");
-        SPHook(compare, @"viewWillAppear:", (IMP)HookCompareViewWillAppear, (IMP *)&OrigCompareViewWillAppear);
         Class resultList = NSClassFromString(@"_TtC9SpeedTest24ResultListViewController");
         SPHook(resultList, @"viewWillAppear:", (IMP)HookResultListViewWillAppear, (IMP *)&OrigResultListViewWillAppear);
 
@@ -694,8 +813,14 @@ __attribute__((constructor)) static void SpeedtestPlusInitialize(void) {
 
         Class share = NSClassFromString(@"_TtC9SpeedTestP33_A9A507B3669C583A38FE6357D8AFFD8023SharingTextActivityItem");
         SPHook(share, @"item", (IMP)HookShareItem, (IMP *)&OrigShareItem);
+        Class urlShare = NSClassFromString(@"_TtC9SpeedTestP33_A9A507B3669C583A38FE6357D8AFFD8022SharingURLActivityItem");
+        SPHook(urlShare, @"item", (IMP)HookSuppressedURLItem, NULL);
+        SPHook(urlShare, @"activityViewController:itemForActivityType:", (IMP)HookSuppressedURLActivityItem, NULL);
         Class csv = NSClassFromString(@"_TtC9SpeedTestP33_A9A507B3669C583A38FE6357D8AFFD8033SharingResultsCSVTextActivityItem");
         SPHook(csv, @"activityViewController:itemForActivityType:", (IMP)HookCSVItem, (IMP *)&OrigCSVItem);
+        Class csvFile = NSClassFromString(@"_TtC9SpeedTestP33_A9A507B3669C583A38FE6357D8AFFD8033SharingResultsCSVFileActivityItem");
+        SPHook(csvFile, @"item", (IMP)HookCSVFileItem, (IMP *)&OrigCSVFileItem);
+        SPHook(csvFile, @"activityViewController:itemForActivityType:", (IMP)HookCSVFileActivityItem, (IMP *)&OrigCSVFileActivityItem);
 
         // CoreDataManager is the local history boundary. ResultSaver and the
         // network report builder are intentionally not hooked.

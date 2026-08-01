@@ -22,6 +22,28 @@ class SourceContractTests(unittest.TestCase):
         self.assertNotIn('SPHook(report, @"populateSpeedTestResult:', TWEAK)
         self.assertNotIn('SPHook(saver, @"initWithResult:', TWEAK)
         self.assertIn('SPHook(coreData, @"saveReportAsResult:', TWEAK)
+        self.assertNotIn('SPHook(coreData, @"resultSaver:didCompleteWithSuccess:', TWEAK)
+
+    def test_local_save_is_bound_to_report_and_consumed_once(self):
+        self.assertIn('SPKVCValue(report, @"speedTestResult")', TWEAK)
+        self.assertIn("consumePendingLocalResult", TWEAK)
+
+    def test_remote_compare_offer_is_not_modified(self):
+        self.assertNotIn('SPHook(compare, @"viewWillAppear:', TWEAK)
+
+    def test_native_secondary_speed_channels_are_scaled(self):
+        self.assertIn("SPScaledRaw(nativeMST", TWEAK)
+        self.assertIn("SPScaledRaw(nativeSuper", TWEAK)
+        self.assertIn("SPScaledRaw(nativeAverage", TWEAK)
+
+    def test_url_share_is_suppressed_and_csv_file_is_rewritten(self):
+        self.assertIn("SharingURLActivityItem", TWEAK)
+        self.assertIn("SharingResultsCSVFileActivityItem", TWEAK)
+
+    def test_scene_aware_presentation_and_provider_only_long_press(self):
+        self.assertIn("connectedScenes", TWEAK)
+        fallback = TWEAK[TWEAK.index("static void SPAttachControls"):TWEAK.index("static void SPAttachProviderControls")]
+        self.assertNotIn("UILongPressGestureRecognizer", fallback)
 
     def test_server_selection_is_not_hooked(self):
         self.assertNotIn("didSelectRowAtIndexPath", TWEAK)

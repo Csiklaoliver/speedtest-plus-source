@@ -73,7 +73,7 @@ Expected manifest shape:
 ```json
 {
   "ios": {
-    "version": "0.1.1",
+    "version": "0.1.2",
     "download_url": "https://speedtest.oliverprojects.tech/ios"
   }
 }

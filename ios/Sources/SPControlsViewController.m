@@ -14,6 +14,7 @@
 @implementation SPControlsViewController
 
 + (void)presentFrom:(UIViewController *)presenter {
+    if (!presenter || presenter.presentedViewController) return;
     SPControlsViewController *controller = [self new];
     UINavigationController *navigation = [[UINavigationController alloc] initWithRootViewController:controller];
     navigation.modalPresentationStyle = UIModalPresentationFormSheet;
@@ -25,11 +26,13 @@
     UIAlertController *guide = [UIAlertController alertControllerWithTitle:@"Speedtest+ guide" message:message preferredStyle:UIAlertControllerStyleAlert];
     if (allowOpenControls) {
         [guide addAction:[UIAlertAction actionWithTitle:@"Open Controls" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-            [self presentFrom:presenter];
+            [[SPState shared] setIntroSeen:YES];
+            dispatch_async(dispatch_get_main_queue(), ^{ [self presentFrom:presenter]; });
         }]];
     }
-    [guide addAction:[UIAlertAction actionWithTitle:@"Got it" style:UIAlertActionStyleCancel handler:nil]];
-    [[SPState shared] setIntroSeen:YES];
+    [guide addAction:[UIAlertAction actionWithTitle:@"Got it" style:UIAlertActionStyleCancel handler:^(__unused UIAlertAction *action) {
+        [[SPState shared] setIntroSeen:YES];
+    }]];
     [presenter presentViewController:guide animated:YES completion:nil];
 }
 
@@ -53,7 +56,7 @@
         [self.scrollView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
         [self.scrollView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
         [self.scrollView.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor],
-        [self.scrollView.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor]
+        [self.scrollView.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor]
     ]];
 
     self.stack = [[UIStackView alloc] init];
@@ -201,6 +204,18 @@
 
 - (NSString *)trimmed:(NSString *)text { return [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]; }
 
+- (NSNumber *)localizedNumberFromText:(NSString *)text {
+    for (NSLocale *locale in @[NSLocale.currentLocale, [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"]]) {
+        NSNumberFormatter *formatter = [NSNumberFormatter new];
+        formatter.locale = locale;
+        formatter.numberStyle = NSNumberFormatterDecimalStyle;
+        formatter.lenient = NO;
+        NSNumber *number = [formatter numberFromString:text];
+        if (number) return number;
+    }
+    return nil;
+}
+
 - (void)dismissKeyboard { [self.view endEditing:YES]; }
 
 - (BOOL)textFieldShouldReturn:(UITextField *)textField {
@@ -211,9 +226,9 @@
 - (NSNumber *)decimalForKey:(NSString *)key maximum:(double)maximum error:(NSString **)error {
     NSString *text = [self trimmed:self.fields[key].text ?: @""];
     if (!text.length) return nil;
-    NSScanner *scanner = [NSScanner scannerWithString:text];
-    double value = 0;
-    if (![scanner scanDouble:&value] || !scanner.isAtEnd || !isfinite(value) || value < 0 || value > maximum) {
+    NSNumber *parsed = [self localizedNumberFromText:text];
+    double value = parsed.doubleValue;
+    if (!parsed || !isfinite(value) || value < 0 || value > maximum) {
         *error = [NSString stringWithFormat:@"%@ must be between 0 and %@.", self.fields[key].placeholder, @(maximum)];
         return nil;
     }
@@ -269,6 +284,12 @@
     [self presentViewController:alert animated:YES completion:nil];
 }
 
+- (void)presentAfterCurrentAlertDismisses:(UIViewController *)controller {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (!self.presentedViewController) [self presentViewController:controller animated:YES completion:nil];
+    });
+}
+
 - (void)apply {
     [self dismissKeyboard];
     NSString *error = nil;
@@ -287,7 +308,11 @@
         [sheet addAction:[UIAlertAction actionWithTitle:theme.name style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
             [SPState.shared setThemeIndex:index];
             [self.themeButton setTitle:theme.name forState:UIControlStateNormal];
-            [SPTheme applyTheme:theme toView:self.view];
+            if (SPState.shared.testActive) {
+                [self showMessage:@"Theme saved; applies when Speedtest+ is reopened."];
+            } else {
+                [SPTheme applyTheme:theme toView:self.view];
+            }
         }]];
     }];
     [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
@@ -324,13 +349,15 @@
             if (!configuration) { [self showMessage:error]; return; }
             [SPState.shared saveProfile:@{ @"name": profileName, @"configuration": configuration } atIndex:index];
         }]];
-        [self presentViewController:name animated:YES completion:nil];
+        [self presentAfterCurrentAlertDismisses:name];
     };
     if (!replacing) { prompt(); return; }
     UIAlertController *confirm = [UIAlertController alertControllerWithTitle:@"Overwrite profile?" message:@"The saved settings in this slot will be replaced." preferredStyle:UIAlertControllerStyleAlert];
     [confirm addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-    [confirm addAction:[UIAlertAction actionWithTitle:@"Overwrite" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) { prompt(); }]];
-    [self presentViewController:confirm animated:YES completion:nil];
+    [confirm addAction:[UIAlertAction actionWithTitle:@"Overwrite" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), prompt);
+    }]];
+    [self presentAfterCurrentAlertDismisses:confirm];
 }
 
 - (void)confirmDeleteProfile:(NSInteger)index {

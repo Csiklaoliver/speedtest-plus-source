@@ -59,11 +59,15 @@ so the official remote Ookla report remains measured.
 | Runtime class | Hook |
 |---|---|
 | `_TtC9SpeedTest27ResultDetailsViewController` | Replace visible local detail labels from the finalized result |
-| `_TtC9SpeedTest33CompareResultsOfferViewController` | Replace user download, upload, ping, provider, and city labels |
 | `_TtC9SpeedTest30PreparedFeedbackViewController` | Use the active ISP in the rating prompt |
 | `_TtC9SpeedTest28SpeedtestCardsViewController` | Rewrite visible provider-rating and expectations survey labels in displayed cards |
 | `SharingTextActivityItem` Swift runtime class | Build local plain-text sharing output |
+| `SharingURLActivityItem` Swift runtime class | Suppress the official public-result URL item |
 | `SharingResultsCSVTextActivityItem` Swift runtime class | Append ISP, provider, jitter, and loss columns |
+| `SharingResultsCSVFileActivityItem` Swift runtime class | Apply the same columns to file-based CSV exports |
+
+`CompareResultsOfferViewController` is intentionally not hooked because it
+renders remote ISP offers and provider medians, not the user's result model.
 
 ## Server selection
 
