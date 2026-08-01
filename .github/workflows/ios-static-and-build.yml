@@ -45,4 +45,13 @@ jobs:
         env:
           THEOS: ${{ runner.temp }}/theos
         run: make package FINALPACKAGE=1
-
+      - name: Upload unsigned tweak artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpeedtestPlus-iOS-unsigned
+          path: |
+            ios/.theos/obj/**/*.dylib
+            ios/packages/*.deb
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
