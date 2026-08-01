@@ -14,6 +14,8 @@ static const NSInteger SPStageUpload = 3;
 static const NSInteger SPButtonTag = 0x53505031;
 static const NSInteger SPBadgeTag = 0x53505032;
 
+static id SPObject(id object, SEL selector);
+
 static double SPDouble(id object, SEL selector, double fallback) {
     if (!object || ![object respondsToSelector:selector]) return fallback;
     return ((double (*)(id, SEL))objc_msgSend)(object, selector);
