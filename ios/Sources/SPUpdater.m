@@ -2,7 +2,7 @@
 #import "SPState.h"
 
 static NSString * const SPManifestURL = @"https://speedtest.oliverprojects.tech/api/ota/manifest";
-static NSString * const SPCurrentVersion = @"0.1.0";
+static NSString * const SPCurrentVersion = @"0.1.1";
 
 @implementation SPUpdater
 

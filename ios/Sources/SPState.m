@@ -11,6 +11,29 @@ static NSString * const SPConfigKey = @"active_configuration";
 static NSString * const SPProfilesKey = @"profiles";
 static NSString * const SPLastResultKey = @"last_finalized_result";
 
+static id SPDefaultsSafeValue(id value) {
+    if (!value || value == NSNull.null) return nil;
+    if ([value isKindOfClass:NSString.class] || [value isKindOfClass:NSNumber.class] ||
+        [value isKindOfClass:NSData.class] || [value isKindOfClass:NSDate.class]) return value;
+    if ([value isKindOfClass:NSDictionary.class]) {
+        NSMutableDictionary *safe = [NSMutableDictionary dictionary];
+        [(NSDictionary *)value enumerateKeysAndObjectsUsingBlock:^(id key, id item, BOOL *stop) {
+            id cleaned = SPDefaultsSafeValue(item);
+            if ([key isKindOfClass:NSString.class] && cleaned) safe[key] = cleaned;
+        }];
+        return [safe copy];
+    }
+    if ([value isKindOfClass:NSArray.class]) {
+        NSMutableArray *safe = [NSMutableArray array];
+        for (id item in (NSArray *)value) {
+            id cleaned = SPDefaultsSafeValue(item);
+            if (cleaned) [safe addObject:cleaned];
+        }
+        return [safe copy];
+    }
+    return nil;
+}
+
 @interface SPState ()
 @property(nonatomic) NSMutableDictionary<NSString *, id> *store;
 @property(nonatomic) NSMutableDictionary<NSString *, id> *mutableConfiguration;
@@ -47,7 +70,9 @@ static NSString * const SPLastResultKey = @"last_finalized_result";
 - (void)persist {
     self.store[SPConfigKey] = [self.mutableConfiguration copy];
     self.store[SPLastResultKey] = [self.mutableLastResult copy];
-    [[NSUserDefaults standardUserDefaults] setObject:[self.store copy] forKey:SPDefaultsKey];
+    NSDictionary *safeStore = SPDefaultsSafeValue(self.store);
+    self.store = [safeStore mutableCopy] ?: [NSMutableDictionary dictionary];
+    [[NSUserDefaults standardUserDefaults] setObject:safeStore ?: @{} forKey:SPDefaultsKey];
 }
 
 - (NSDictionary<NSString *,id> *)configuration { return [self.mutableConfiguration copy]; }
@@ -130,26 +155,44 @@ static NSString *SPPasswordHash(NSString *password) {
 - (void)setLastPromptedUpdateVersion:(NSString *)version { if (version.length) self.store[@"last_prompted_update_version"] = version; [self persist]; }
 
 - (NSDictionary<NSString *,id> *)profileAtIndex:(NSInteger)index {
-    NSArray *profiles = self.store[SPProfilesKey];
-    if (index < 0 || index >= (NSInteger)profiles.count) return nil;
-    id profile = profiles[index];
-    return [profile isKindOfClass:NSDictionary.class] ? profile : nil;
+    if (index < 0 || index > 2) return nil;
+    id savedProfiles = self.store[SPProfilesKey];
+    id profile = nil;
+    if ([savedProfiles isKindOfClass:NSDictionary.class]) {
+        profile = savedProfiles[[NSString stringWithFormat:@"%ld", (long)index]];
+    } else if ([savedProfiles isKindOfClass:NSArray.class] && index < (NSInteger)[savedProfiles count]) {
+        profile = savedProfiles[index];
+    }
+    if (![profile isKindOfClass:NSDictionary.class]) return nil;
+    NSString *name = profile[@"name"];
+    NSDictionary *configuration = profile[@"configuration"];
+    return [name isKindOfClass:NSString.class] && name.length && [configuration isKindOfClass:NSDictionary.class] ? profile : nil;
 }
 
 - (void)saveProfile:(NSDictionary<NSString *,id> *)profile atIndex:(NSInteger)index {
     if (index < 0 || index > 2) return;
-    NSMutableArray *profiles = [self.store[SPProfilesKey] mutableCopy] ?: [NSMutableArray array];
-    while (profiles.count < 3) [profiles addObject:NSNull.null];
-    profiles[index] = [profile copy];
+    NSMutableDictionary *profiles = [NSMutableDictionary dictionary];
+    id savedProfiles = self.store[SPProfilesKey];
+    if ([savedProfiles isKindOfClass:NSDictionary.class]) {
+        [profiles addEntriesFromDictionary:savedProfiles];
+    } else if ([savedProfiles isKindOfClass:NSArray.class]) {
+        [savedProfiles enumerateObjectsUsingBlock:^(id item, NSUInteger oldIndex, BOOL *stop) {
+            if (oldIndex < 3 && [item isKindOfClass:NSDictionary.class]) profiles[[NSString stringWithFormat:@"%lu", (unsigned long)oldIndex]] = item;
+        }];
+    }
+    profiles[[NSString stringWithFormat:@"%ld", (long)index]] = [profile copy];
     self.store[SPProfilesKey] = profiles;
     [self persist];
 }
 
 - (void)deleteProfileAtIndex:(NSInteger)index {
-    NSMutableArray *profiles = [self.store[SPProfilesKey] mutableCopy];
-    if (index < 0 || index >= (NSInteger)profiles.count) return;
-    profiles[index] = NSNull.null;
-    self.store[SPProfilesKey] = profiles;
+    if (index < 0 || index > 2) return;
+    NSMutableDictionary *profiles = [NSMutableDictionary dictionary];
+    for (NSInteger slot = 0; slot < 3; slot++) {
+        NSDictionary *profile = [self profileAtIndex:slot];
+        if (profile && slot != index) profiles[[NSString stringWithFormat:@"%ld", (long)slot]] = profile;
+    }
+    self.store[SPProfilesKey] = [profiles copy];
     [self persist];
 }
 

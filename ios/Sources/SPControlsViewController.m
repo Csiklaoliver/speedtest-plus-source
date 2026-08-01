@@ -4,7 +4,7 @@
 #import <math.h>
 #import <limits.h>
 
-@interface SPControlsViewController ()
+@interface SPControlsViewController () <UITextFieldDelegate>
 @property(nonatomic) UIScrollView *scrollView;
 @property(nonatomic) UIStackView *stack;
 @property(nonatomic) NSMutableDictionary<NSString *, UITextField *> *fields;
@@ -41,9 +41,14 @@
     self.view.backgroundColor = theme.background;
 
     self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Close" style:UIBarButtonItemStylePlain target:self action:@selector(close)];
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithTitle:@"Apply" style:UIBarButtonItemStyleDone target:self action:@selector(apply)];
     self.scrollView = [UIScrollView new];
+    self.scrollView.keyboardDismissMode = UIScrollViewKeyboardDismissModeInteractive;
     self.scrollView.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:self.scrollView];
+    UITapGestureRecognizer *dismissTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(dismissKeyboard)];
+    dismissTap.cancelsTouchesInView = NO;
+    [self.scrollView addGestureRecognizer:dismissTap];
     [NSLayoutConstraint activateConstraints:@[
         [self.scrollView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
         [self.scrollView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
@@ -160,6 +165,14 @@
     field.layer.cornerRadius = 10;
     field.clearButtonMode = UITextFieldViewModeWhileEditing;
     field.autocorrectionType = UITextAutocorrectionTypeNo;
+    field.delegate = self;
+    field.returnKeyType = UIReturnKeyDone;
+    UIToolbar *keyboardBar = [[UIToolbar alloc] initWithFrame:CGRectMake(0, 0, 0, 44)];
+    UIBarButtonItem *space = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+    UIBarButtonItem *done = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(dismissKeyboard)];
+    keyboardBar.items = @[space, done];
+    [keyboardBar sizeToFit];
+    field.inputAccessoryView = keyboardBar;
     UIView *padding = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 12, 1)];
     field.leftView = padding;
     field.leftViewMode = UITextFieldViewModeAlways;
@@ -187,6 +200,13 @@
 }
 
 - (NSString *)trimmed:(NSString *)text { return [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]; }
+
+- (void)dismissKeyboard { [self.view endEditing:YES]; }
+
+- (BOOL)textFieldShouldReturn:(UITextField *)textField {
+    [textField resignFirstResponder];
+    return YES;
+}
 
 - (NSNumber *)decimalForKey:(NSString *)key maximum:(double)maximum error:(NSString **)error {
     NSString *text = [self trimmed:self.fields[key].text ?: @""];
@@ -250,6 +270,7 @@
 }
 
 - (void)apply {
+    [self dismissKeyboard];
     NSString *error = nil;
     NSDictionary *configuration = [self validatedConfigurationWithError:&error];
     if (!configuration) { [self showMessage:error ?: @"The settings could not be applied."]; return; }
