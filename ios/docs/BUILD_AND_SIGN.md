@@ -36,14 +36,23 @@ it through the normal Theos install flow. The filter loads it only into
 
 1. Obtain a clean decrypted Speedtest 7.0.5 IPA.
 2. Build `SpeedtestPlus.dylib` on macOS.
-3. Use a maintained Mach-O injection tool to add the dynamic library to
-   `Payload/SpeedTest.app/SpeedTest` and copy the library into the app bundle.
-4. Remove the original `_CodeSignature` directory and embedded provisioning
-   profile from the working copy only.
+3. Install LIEF with `python3 -m pip install lief`.
+4. Create the unsigned review IPA:
+
+```sh
+python3 Scripts/build_unsigned_ipa.py \
+  --input /path/to/decrypted-speedtest.ipa \
+  --dylib .theos/obj/SpeedtestPlus.dylib \
+  --output build/SpeedtestPlus-iOS-unsigned.ipa
+```
+
 5. Sign every embedded framework and dynamic library, then sign `SpeedTest.app`
    with the reviewer's provisioning profile and entitlements.
-6. Repack `Payload` as an IPA and install it through the reviewer's selected
-   sideloading method.
+6. Install it through the reviewer's selected sideloading method.
+
+The packaging script removes the inspected reference IPA's known third-party
+injections, stale app signature, and embedded provisioning profile. It then adds
+only `SpeedtestPlus.dylib`. It never changes or uploads the input IPA.
 
 The exact signing command depends on the reviewer's certificate and sideload
 workflow, so no identity, provisioning UUID, password, or signing key is stored
