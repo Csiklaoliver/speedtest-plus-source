@@ -118,6 +118,11 @@ def main() -> int:
                     continue
                 if item.filename == prefix + "embedded.mobileprovision":
                     continue
+                # A previously patched reference may already contain our
+                # dylib. Never copy it through or the output would contain
+                # duplicate Frameworks/SpeedtestPlus.dylib entries.
+                if item.filename == dylib_path:
+                    continue
                 if relative and leaf in LEGACY_DYLIBS and "/" not in relative:
                     continue
                 target.writestr(copy_info(item), source.read(item.filename))
