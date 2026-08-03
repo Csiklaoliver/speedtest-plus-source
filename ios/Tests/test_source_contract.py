@@ -44,6 +44,14 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("connectedScenes", TWEAK)
         fallback = TWEAK[TWEAK.index("static void SPAttachControls"):TWEAK.index("static void SPAttachProviderControls")]
         self.assertNotIn("UILongPressGestureRecognizer", fallback)
+        self.assertNotIn("bottomAnchor", fallback)
+
+    def test_provider_info_icon_is_attached_to_isp_row(self):
+        provider = TWEAK[TWEAK.index("static void SPAttachProviderControls"):TWEAK.index("static BOOL SPIsScopedController")]
+        self.assertIn('SPLabel(hostController, @"ispNameLabel")', provider)
+        self.assertIn('systemImageNamed:@"info.circle"', provider)
+        self.assertIn("insertArrangedSubview:button", provider)
+        self.assertNotIn('setTitle:@"S+  i"', provider)
 
     def test_server_selection_is_not_hooked(self):
         self.assertNotIn("didSelectRowAtIndexPath", TWEAK)

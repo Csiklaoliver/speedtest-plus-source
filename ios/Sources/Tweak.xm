@@ -307,6 +307,7 @@ static void SPPresentUnlock(UIViewController *presenter) {
 static const void *SPActionTargetKey = &SPActionTargetKey;
 static const void *SPOriginalLabelTextKey = &SPOriginalLabelTextKey;
 static const void *SPPreviousLabelOverrideKey = &SPPreviousLabelOverrideKey;
+static const void *SPProviderGestureKey = &SPProviderGestureKey;
 
 static UIViewController *SPViewControllerForView(UIView *view) {
     UIResponder *responder = view;
@@ -343,6 +344,7 @@ static void SPApplyProviderLabels(id hostController) {
 }
 
 static void SPRefreshBadge(UIViewController *controller) {
+    if (![controller isKindOfClass:UIViewController.class]) return;
     UIButton *button = [controller.view viewWithTag:SPButtonTag];
     UILabel *badge = [controller.view viewWithTag:SPBadgeTag];
     NSInteger count = SPState.shared.activeOverrideCount;
@@ -351,52 +353,32 @@ static void SPRefreshBadge(UIViewController *controller) {
     badge.text = [NSString stringWithFormat:@"CUSTOM \u2022 %ld", (long)count];
 }
 
+static BOOL SPViewIsDescendantOf(UIView *view, UIView *ancestor) {
+    if (!view || !ancestor) return NO;
+    UIView *cursor = view;
+    while (cursor) {
+        if (cursor == ancestor) return YES;
+        cursor = cursor.superview;
+    }
+    return NO;
+}
+
+static void SPRemoveLegacyFloatingControls(UIViewController *controller) {
+    if (![controller isKindOfClass:UIViewController.class]) return;
+    // Builds before 0.1.3 placed the controls in the lower-right corner of
+    // the whole screen. Remove only those direct children; the new provider
+    // icon lives below ispView and must be preserved.
+    UIButton *button = [controller.view viewWithTag:SPButtonTag];
+    if (button && button.superview == controller.view) [button removeFromSuperview];
+    UILabel *badge = [controller.view viewWithTag:SPBadgeTag];
+    if (badge && badge.superview == controller.view) [badge removeFromSuperview];
+}
+
 static void SPAttachControls(UIViewController *controller) {
-    if ([controller.view viewWithTag:SPButtonTag]) { SPRefreshBadge(controller); return; }
-    SPActionTarget *target = [SPActionTarget new];
-    target.presenter = controller;
-    objc_setAssociatedObject(controller, SPActionTargetKey, target, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-
-    UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
-    button.tag = SPButtonTag;
-    button.translatesAutoresizingMaskIntoConstraints = NO;
-    [button setTitle:@"S+  i" forState:UIControlStateNormal];
-    button.titleLabel.font = [UIFont boldSystemFontOfSize:15];
-    button.accessibilityLabel = @"Open Speedtest+ information and controls";
-    button.backgroundColor = [UIColor colorWithWhite:0 alpha:0.50];
-    button.layer.cornerRadius = 12;
-    [button addTarget:target action:@selector(openGuide) forControlEvents:UIControlEventTouchUpInside];
-    [controller.view addSubview:button];
-
-    UILabel *badge = [UILabel new];
-    badge.tag = SPBadgeTag;
-    badge.translatesAutoresizingMaskIntoConstraints = NO;
-    badge.font = [UIFont boldSystemFontOfSize:10];
-    badge.textColor = UIColor.whiteColor;
-    badge.backgroundColor = [UIColor colorWithWhite:0 alpha:0.60];
-    badge.layer.cornerRadius = 8;
-    badge.layer.masksToBounds = YES;
-    badge.textAlignment = NSTextAlignmentCenter;
-    [controller.view addSubview:badge];
-
-    [NSLayoutConstraint activateConstraints:@[
-        [button.trailingAnchor constraintEqualToAnchor:controller.view.safeAreaLayoutGuide.trailingAnchor constant:-12],
-        [button.bottomAnchor constraintEqualToAnchor:controller.view.safeAreaLayoutGuide.bottomAnchor constant:-70],
-        [button.widthAnchor constraintGreaterThanOrEqualToConstant:48],
-        [button.heightAnchor constraintEqualToConstant:48],
-        [badge.centerXAnchor constraintEqualToAnchor:button.centerXAnchor],
-        [badge.bottomAnchor constraintEqualToAnchor:button.topAnchor constant:-5],
-        [badge.widthAnchor constraintGreaterThanOrEqualToConstant:68],
-        [badge.heightAnchor constraintEqualToConstant:18]
-    ]];
-    __weak UIViewController *weakController = controller;
-    SPObserverToken *observer = [SPObserverToken new];
-    observer.token = [[NSNotificationCenter defaultCenter] addObserverForName:SPStateDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
-        UIViewController *strongController = weakController;
-        if (strongController) SPRefreshBadge(strongController);
-    }];
-    objc_setAssociatedObject(controller, SPObserverTokenKey, observer, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    SPRefreshBadge(controller);
+    // The info affordance is intentionally attached to the ISP row by
+    // SPAttachProviderControls. Keep this hook only as a migration cleanup
+    // for an already-loaded screen from an older dylib.
+    SPRemoveLegacyFloatingControls(controller);
 }
 
 static void SPAttachProviderControls(id hostController, UIStackView *stack) {
@@ -404,14 +386,22 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
     UIViewController *presenter = SPViewControllerForView(stack);
     if (!presenter) return;
 
+    UIView *ispView = SPObject(hostController, NSSelectorFromString(@"ispView"));
+    UILabel *ispLabel = SPLabel(hostController, @"ispNameLabel");
+    if (![ispView isKindOfClass:UIView.class] || ![ispLabel isKindOfClass:UILabel.class]) return;
+
     UIButton *existing = [presenter.view viewWithTag:SPButtonTag];
     UILabel *existingBadge = [presenter.view viewWithTag:SPBadgeTag];
-    if (existing && existing.superview != stack) {
+    if (existing && !SPViewIsDescendantOf(existing, ispView)) {
         [existing removeFromSuperview];
         [existingBadge removeFromSuperview];
         existing = nil;
     }
-    if (existing) { SPRefreshBadge(presenter); return; }
+    if (existing) {
+        SPApplyProviderLabels(hostController);
+        SPRefreshBadge(presenter);
+        return;
+    }
 
     SPActionTarget *target = [SPActionTarget new];
     target.presenter = presenter;
@@ -431,14 +421,22 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
 
     UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
     button.tag = SPButtonTag;
-    [button setTitle:@"S+  i" forState:UIControlStateNormal];
-    button.titleLabel.font = [UIFont boldSystemFontOfSize:15];
+    button.translatesAutoresizingMaskIntoConstraints = NO;
+    button.tintColor = ispLabel.textColor ?: UIColor.whiteColor;
+    button.titleLabel.font = [UIFont systemFontOfSize:22 weight:UIFontWeightSemibold];
+    if (@available(iOS 13.0, *)) {
+        UIImage *image = [UIImage systemImageNamed:@"info.circle"];
+        if (image) [button setImage:image forState:UIControlStateNormal];
+        else [button setTitle:@"\u24d8" forState:UIControlStateNormal];
+    } else {
+        [button setTitle:@"\u24d8" forState:UIControlStateNormal];
+    }
     button.accessibilityLabel = @"Open Speedtest+ information and controls";
-    button.backgroundColor = [UIColor colorWithWhite:0 alpha:0.35];
-    button.layer.cornerRadius = 12;
+    button.accessibilityHint = @"Opens the Speedtest+ guide and controls";
+    button.backgroundColor = UIColor.clearColor;
     button.clipsToBounds = NO;
-    [button.widthAnchor constraintEqualToConstant:48].active = YES;
-    [button.heightAnchor constraintEqualToConstant:48].active = YES;
+    [button.widthAnchor constraintEqualToConstant:32].active = YES;
+    [button.heightAnchor constraintEqualToConstant:32].active = YES;
     [button addTarget:target action:@selector(openGuide) forControlEvents:UIControlEventTouchUpInside];
 
     [button addSubview:badge];
@@ -446,13 +444,32 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
         [badge.centerXAnchor constraintEqualToAnchor:button.centerXAnchor],
         [badge.bottomAnchor constraintEqualToAnchor:button.topAnchor constant:2]
     ]];
-    [stack addArrangedSubview:button];
-    UIView *providerView = SPObject(hostController, NSSelectorFromString(@"ispView"));
+
+    UIView *ispRow = ispLabel.superview;
+    if ([ispRow isKindOfClass:UIStackView.class] && [((UIStackView *)ispRow).arrangedSubviews containsObject:ispLabel]) {
+        UIStackView *row = (UIStackView *)ispRow;
+        NSUInteger labelIndex = [row.arrangedSubviews indexOfObject:ispLabel];
+        [row insertArrangedSubview:button atIndex:MIN(labelIndex + 1, row.arrangedSubviews.count)];
+    } else {
+        UIView *container = [ispRow isKindOfClass:UIView.class] && SPViewIsDescendantOf(ispLabel, ispRow) ? ispRow : ispView;
+        [container addSubview:button];
+        [NSLayoutConstraint activateConstraints:@[
+            [button.leadingAnchor constraintEqualToAnchor:ispLabel.trailingAnchor constant:6],
+            [button.centerYAnchor constraintEqualToAnchor:ispLabel.centerYAnchor],
+            [button.trailingAnchor constraintLessThanOrEqualToAnchor:container.trailingAnchor constant:-4]
+        ]];
+    }
+
+    UIView *providerView = ispView;
     if ([providerView isKindOfClass:UIView.class]) {
-        UILongPressGestureRecognizer *gesture = [[UILongPressGestureRecognizer alloc] initWithTarget:target action:@selector(longPressed:)];
-        gesture.minimumPressDuration = 0.75;
-        gesture.cancelsTouchesInView = NO;
-        [providerView addGestureRecognizer:gesture];
+        UILongPressGestureRecognizer *gesture = objc_getAssociatedObject(providerView, SPProviderGestureKey);
+        if (!gesture) {
+            gesture = [[UILongPressGestureRecognizer alloc] initWithTarget:target action:@selector(longPressed:)];
+            gesture.minimumPressDuration = 0.75;
+            gesture.cancelsTouchesInView = NO;
+            [providerView addGestureRecognizer:gesture];
+            objc_setAssociatedObject(providerView, SPProviderGestureKey, gesture, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
     }
     __weak UIViewController *weakPresenter = presenter;
     __weak id weakHost = hostController;
