@@ -274,21 +274,23 @@ static UIViewController *SPPresenter(id object) {
 }
 
 static void SPPresentUnlock(UIViewController *presenter) {
-    if (!SPState.shared.panelHidden) { [SPControlsViewController presentFrom:presenter]; return; }
+    UIViewController *host = presenter ?: SPPresenter(nil);
+    if (!host) return;
+    if (!SPState.shared.panelHidden) { [SPControlsViewController presentFrom:host]; return; }
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Unlock Speedtest+" message:nil preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) { field.placeholder = @"Password"; field.secureTextEntry = YES; }];
     [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
     [alert addAction:[UIAlertAction actionWithTitle:@"Unlock" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
         if ([SPState.shared unlockWithPassword:alert.textFields.firstObject.text ?: @""]) {
-            dispatch_async(dispatch_get_main_queue(), ^{ [SPControlsViewController presentFrom:SPPresenter(presenter)]; });
+            dispatch_async(dispatch_get_main_queue(), ^{ [SPControlsViewController presentFrom:host]; });
         }
         else {
             UIAlertController *failed = [UIAlertController alertControllerWithTitle:@"Speedtest+" message:@"Incorrect password." preferredStyle:UIAlertControllerStyleAlert];
             [failed addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
-            dispatch_async(dispatch_get_main_queue(), ^{ [SPPresenter(presenter) presentViewController:failed animated:YES completion:nil]; });
+            dispatch_async(dispatch_get_main_queue(), ^{ [host presentViewController:failed animated:YES completion:nil]; });
         }
     }]];
-    [presenter presentViewController:alert animated:YES completion:nil];
+    [host presentViewController:alert animated:YES completion:nil];
 }
 
 @interface SPActionTarget : NSObject
@@ -299,12 +301,13 @@ static void SPPresentUnlock(UIViewController *presenter) {
 @end
 
 @implementation SPActionTarget
-- (void)openControls { SPPresentUnlock(self.presenter); }
-- (void)openGuide { [SPControlsViewController presentGuideFrom:self.presenter allowOpenControls:YES]; }
+- (void)openControls { SPPresentUnlock(self.presenter ?: SPPresenter(nil)); }
+- (void)openGuide { [SPControlsViewController presentGuideFrom:self.presenter ?: SPPresenter(nil) allowOpenControls:YES]; }
 - (void)longPressed:(UILongPressGestureRecognizer *)recognizer { if (recognizer.state == UIGestureRecognizerStateBegan) SPPresentUnlock(self.presenter); }
 @end
 
 static const void *SPActionTargetKey = &SPActionTargetKey;
+static const void *SPControlBarItemKey = &SPControlBarItemKey;
 static const void *SPOriginalLabelTextKey = &SPOriginalLabelTextKey;
 static const void *SPPreviousLabelOverrideKey = &SPPreviousLabelOverrideKey;
 static const void *SPProviderGestureKey = &SPProviderGestureKey;
@@ -376,9 +379,36 @@ static void SPRemoveLegacyFloatingControls(UIViewController *controller) {
 
 static void SPAttachControls(UIViewController *controller) {
     // The info affordance is intentionally attached to the ISP row by
-    // SPAttachProviderControls. Keep this hook only as a migration cleanup
-    // for an already-loaded screen from an older dylib.
+    // SPAttachProviderControls. Keep a small, reliable navigation fallback as
+    // well: some app builds instantiate the provider host lazily, so the
+    // provider setter hook can run after the speed controller is already
+    // visible (or not run at all). Without this fallback users had no way to
+    // reach the controls panel on those builds.
     SPRemoveLegacyFloatingControls(controller);
+
+    if (!controller.navigationItem) return;
+    UIBarButtonItem *existing = objc_getAssociatedObject(controller, SPControlBarItemKey);
+    if ([existing isKindOfClass:UIBarButtonItem.class]) return;
+
+    SPActionTarget *target = objc_getAssociatedObject(controller, SPActionTargetKey);
+    if (![target isKindOfClass:SPActionTarget.class]) {
+        target = [SPActionTarget new];
+        target.presenter = controller;
+        objc_setAssociatedObject(controller, SPActionTargetKey, target, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    } else {
+        target.presenter = controller;
+    }
+
+    UIBarButtonItem *item = [[UIBarButtonItem alloc] initWithTitle:@"S+"
+                                                               style:UIBarButtonItemStylePlain
+                                                              target:target
+                                                              action:@selector(openGuide)];
+    item.accessibilityLabel = @"Open Speedtest+ controls";
+    item.accessibilityHint = @"Opens the Speedtest+ guide and controls panel";
+    NSMutableArray *items = [controller.navigationItem.rightBarButtonItems mutableCopy] ?: [NSMutableArray array];
+    [items addObject:item];
+    controller.navigationItem.rightBarButtonItems = items;
+    objc_setAssociatedObject(controller, SPControlBarItemKey, item, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
 static void SPAttachProviderControls(id hostController, UIStackView *stack) {
@@ -392,7 +422,7 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
 
     UIButton *existing = [presenter.view viewWithTag:SPButtonTag];
     UILabel *existingBadge = [presenter.view viewWithTag:SPBadgeTag];
-    if (existing && !SPViewIsDescendantOf(existing, ispView)) {
+    if (existing && !SPViewIsDescendantOf(existing, ispView) && !SPViewIsDescendantOf(existing, stack)) {
         [existing removeFromSuperview];
         [existingBadge removeFromSuperview];
         existing = nil;
@@ -435,8 +465,10 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
     button.accessibilityHint = @"Opens the Speedtest+ guide and controls";
     button.backgroundColor = UIColor.clearColor;
     button.clipsToBounds = NO;
-    [button.widthAnchor constraintEqualToConstant:32].active = YES;
-    [button.heightAnchor constraintEqualToConstant:32].active = YES;
+    // Keep the visual icon compact while providing the full 48pt touch target
+    // expected by iOS accessibility and by the controls guide.
+    [button.widthAnchor constraintEqualToConstant:48].active = YES;
+    [button.heightAnchor constraintEqualToConstant:48].active = YES;
     [button addTarget:target action:@selector(openGuide) forControlEvents:UIControlEventTouchUpInside];
 
     [button addSubview:badge];
@@ -483,6 +515,25 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
     objc_setAssociatedObject(hostController, SPObserverTokenKey, observer, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     SPApplyProviderLabels(hostController);
     SPRefreshBadge(presenter);
+}
+
+static void SPFindProviderControlsInView(UIView *view) {
+    if (![view isKindOfClass:UIView.class]) return;
+
+    UIResponder *responder = view;
+    while ((responder = responder.nextResponder)) {
+        NSString *className = NSStringFromClass(responder.class);
+        if ([className containsString:@"ISPHostController"]) {
+            UIStackView *stack = SPObject(responder, NSSelectorFromString(@"assemblyStackView"));
+            if ([stack isKindOfClass:UIStackView.class]) {
+                SPAttachProviderControls(responder, stack);
+                return;
+            }
+        }
+        if ([responder isKindOfClass:UIViewController.class]) break;
+    }
+
+    for (UIView *child in view.subviews) SPFindProviderControlsInView(child);
 }
 
 static BOOL SPIsScopedController(UIViewController *controller) {
@@ -597,6 +648,7 @@ static void HookSpeedViewDidLoad(id self, SEL _cmd) {
     OrigSpeedViewDidLoad(self, _cmd);
     UIViewController *controller = self;
     SPAttachControls(controller);
+    SPFindProviderControlsInView(controller.view);
     SPApplyThemeToController(controller);
     UIView *ad = SPObject(self, NSSelectorFromString(@"rectangleAdView"));
     ad.hidden = YES;
@@ -607,6 +659,10 @@ static void (*OrigSpeedViewDidAppear)(id, SEL, BOOL);
 static void HookSpeedViewDidAppear(id self, SEL _cmd, BOOL animated) {
     OrigSpeedViewDidAppear(self, _cmd, animated);
     UIViewController *controller = self;
+    // Provider controls can be assembled lazily after viewDidLoad. Retry once
+    // after the screen is on-window so the ISP-row button remains available
+    // even when the private host setter is not observed on this app build.
+    dispatch_async(dispatch_get_main_queue(), ^{ SPFindProviderControlsInView(controller.view); });
     if (!SPState.shared.introSeen && !controller.presentedViewController) {
         [SPControlsViewController presentGuideFrom:controller allowOpenControls:YES];
     }
