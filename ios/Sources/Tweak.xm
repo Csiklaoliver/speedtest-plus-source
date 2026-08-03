@@ -388,7 +388,8 @@ static void SPAttachControls(UIViewController *controller) {
 
     if (!controller.navigationItem) return;
     UIBarButtonItem *existing = objc_getAssociatedObject(controller, SPControlBarItemKey);
-    if ([existing isKindOfClass:UIBarButtonItem.class]) return;
+    if ([existing isKindOfClass:UIBarButtonItem.class] &&
+        [controller.navigationItem.rightBarButtonItems containsObject:existing]) return;
 
     SPActionTarget *target = objc_getAssociatedObject(controller, SPActionTargetKey);
     if (![target isKindOfClass:SPActionTarget.class]) {
@@ -672,6 +673,7 @@ static void HookSpeedViewDidAppear(id self, SEL _cmd, BOOL animated) {
 static void (*OrigSpeedViewWillAppear)(id, SEL, BOOL);
 static void HookSpeedViewWillAppear(id self, SEL _cmd, BOOL animated) {
     OrigSpeedViewWillAppear(self, _cmd, animated);
+    SPAttachControls((UIViewController *)self);
     SPApplyIdentityLabels(self);
     SPHideOfficialUpdateBanner(self);
     SPRefreshBadge(self);
