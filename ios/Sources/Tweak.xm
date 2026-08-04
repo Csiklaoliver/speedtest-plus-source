@@ -307,7 +307,6 @@ static void SPPresentUnlock(UIViewController *presenter) {
 @end
 
 static const void *SPActionTargetKey = &SPActionTargetKey;
-static const void *SPControlBarItemKey = &SPControlBarItemKey;
 static const void *SPOriginalLabelTextKey = &SPOriginalLabelTextKey;
 static const void *SPPreviousLabelOverrideKey = &SPPreviousLabelOverrideKey;
 static const void *SPProviderGestureKey = &SPProviderGestureKey;
@@ -379,37 +378,11 @@ static void SPRemoveLegacyFloatingControls(UIViewController *controller) {
 
 static void SPAttachControls(UIViewController *controller) {
     // The info affordance is intentionally attached to the ISP row by
-    // SPAttachProviderControls. Keep a small, reliable navigation fallback as
-    // well: some app builds instantiate the provider host lazily, so the
-    // provider setter hook can run after the speed controller is already
-    // visible (or not run at all). Without this fallback users had no way to
-    // reach the controls panel on those builds.
+    // SPAttachProviderControls. Keep this hook only as a migration cleanup for
+    // already-loaded screens from an older dylib. There is deliberately no
+    // floating or navigation-bar S+ control here; the ISP row is the sole
+    // controls entry point, matching the Android layout.
     SPRemoveLegacyFloatingControls(controller);
-
-    if (!controller.navigationItem) return;
-    UIBarButtonItem *existing = objc_getAssociatedObject(controller, SPControlBarItemKey);
-    if ([existing isKindOfClass:UIBarButtonItem.class] &&
-        [controller.navigationItem.rightBarButtonItems containsObject:existing]) return;
-
-    SPActionTarget *target = objc_getAssociatedObject(controller, SPActionTargetKey);
-    if (![target isKindOfClass:SPActionTarget.class]) {
-        target = [SPActionTarget new];
-        target.presenter = controller;
-        objc_setAssociatedObject(controller, SPActionTargetKey, target, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    } else {
-        target.presenter = controller;
-    }
-
-    UIBarButtonItem *item = [[UIBarButtonItem alloc] initWithTitle:@"S+"
-                                                               style:UIBarButtonItemStylePlain
-                                                              target:target
-                                                              action:@selector(openGuide)];
-    item.accessibilityLabel = @"Open Speedtest+ controls";
-    item.accessibilityHint = @"Opens the Speedtest+ guide and controls panel";
-    NSMutableArray *items = [controller.navigationItem.rightBarButtonItems mutableCopy] ?: [NSMutableArray array];
-    [items addObject:item];
-    controller.navigationItem.rightBarButtonItems = items;
-    objc_setAssociatedObject(controller, SPControlBarItemKey, item, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
 static void SPAttachProviderControls(id hostController, UIStackView *stack) {
@@ -673,7 +646,6 @@ static void HookSpeedViewDidAppear(id self, SEL _cmd, BOOL animated) {
 static void (*OrigSpeedViewWillAppear)(id, SEL, BOOL);
 static void HookSpeedViewWillAppear(id self, SEL _cmd, BOOL animated) {
     OrigSpeedViewWillAppear(self, _cmd, animated);
-    SPAttachControls((UIViewController *)self);
     SPApplyIdentityLabels(self);
     SPHideOfficialUpdateBanner(self);
     SPRefreshBadge(self);
