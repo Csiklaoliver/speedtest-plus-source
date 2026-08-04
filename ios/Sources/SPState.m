@@ -341,7 +341,9 @@ static NSString *SPPasswordHash(NSString *password) {
 
 - (double)displayMbpsForDirection:(SPDirection)direction measuredMbps:(double)measured progress:(double)progress {
     if (![self runHasSpeedOverrideForDirection:direction]) return measured;
-    if (!isfinite(measured) || measured <= 0.0) return 0.0;
+    // A zero native callback is normal while the transfer socket warms up.
+    // Do not let that first empty frame pin a configured run at 0 Mbps.
+    if (!isfinite(measured)) measured = 0.0;
     double target = [self finalMbpsForDirection:direction measuredMbps:measured];
     NSTimeInterval now = NSProcessInfo.processInfo.systemUptime;
     NSTimeInterval started = direction == SPDirectionDownload ? self.downloadAnimationStartedAt : self.uploadAnimationStartedAt;
@@ -351,13 +353,15 @@ static NSString *SPPasswordHash(NSString *password) {
         else self.uploadAnimationStartedAt = now;
     }
     NSTimeInterval elapsed = MAX(0.0, now - started);
-    double curveProgress;
+    double elapsedProgress;
     if (elapsed < 5.0) {
-        curveProgress = (elapsed / 5.0) * 0.96;
+        elapsedProgress = (elapsed / 5.0) * 0.96;
     } else {
         double oscillation = 0.5 + 0.5 * sin((elapsed - 5.0) * 2.35 + (double)direction);
-        curveProgress = 0.90 + oscillation * 0.07;
+        elapsedProgress = 0.90 + oscillation * 0.07;
     }
+    double suppliedProgress = isfinite(progress) ? MIN(1.0, MAX(0.0, progress)) : 0.0;
+    double curveProgress = MAX(suppliedProgress, elapsedProgress);
     return SPRealisticMbps(target, curveProgress, self.testSeed + (uint64_t)floor(elapsed * 4.0), direction);
 }
 

@@ -658,11 +658,16 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
     __weak UIViewController *weakPresenter = presenter;
     __weak id weakHost = hostController;
     SPObserverToken *observer = [SPObserverToken new];
-    observer.token = [[NSNotificationCenter defaultCenter] addObserverForName:SPStateDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
+    observer.token = [[NSNotificationCenter defaultCenter] addObserverForName:nil object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
         UIViewController *strongPresenter = weakPresenter;
         id strongHost = weakHost;
-        if (strongPresenter) SPRefreshBadge(strongPresenter);
-        if (strongHost) SPApplyProviderLabels(strongHost);
+        if ([note.name isEqualToString:SPThemeDidChangeNotification] && strongPresenter) {
+            [SPTheme applyTheme:[SPTheme themeAtIndex:SPState.shared.themeIndex] toView:strongPresenter.view];
+        }
+        if ([note.name isEqualToString:SPStateDidChangeNotification]) {
+            if (strongPresenter) SPRefreshBadge(strongPresenter);
+            if (strongHost) SPApplyProviderLabels(strongHost);
+        }
     }];
     objc_setAssociatedObject(hostController, SPObserverTokenKey, observer, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     SPApplyProviderLabels(hostController);

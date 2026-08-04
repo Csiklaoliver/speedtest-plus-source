@@ -141,6 +141,19 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("NSMutableDictionary *profiles", profile_section)
         self.assertIn("SPDefaultsSafeValue(self.store)", STATE)
 
+    def test_zero_native_speed_still_uses_configured_animation(self):
+        display = STATE[STATE.index("- (double)displayMbpsForDirection:"):STATE.index("- (void)completeTestWithMeasuredDownload:")]
+        self.assertIn("if (!isfinite(measured)) measured = 0.0", display)
+        self.assertIn("double suppliedProgress", display)
+        self.assertIn("MAX(suppliedProgress, elapsedProgress)", display)
+        self.assertNotIn("measured <= 0.0", display)
+
+    def test_theme_repaints_generic_core_surfaces(self):
+        self.assertIn('containsString:@"Speed"', THEME)
+        self.assertIn('containsString:@"Compare"', THEME)
+        self.assertIn("CGColorGetAlpha(view.backgroundColor.CGColor) > 0.05", THEME)
+        self.assertIn("SPThemeDidChangeNotification", TWEAK)
+
 
 if __name__ == "__main__":
     unittest.main()

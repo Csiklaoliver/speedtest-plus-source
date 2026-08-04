@@ -72,15 +72,31 @@ static UIColor *SPColor(uint32_t rgb) {
     NSString *className = NSStringFromClass(view.class);
     BOOL isLabel = [view isKindOfClass:UILabel.class];
     BOOL isControl = [view isKindOfClass:UIControl.class];
-    BOOL isSurface = [className containsString:@"Card"] || [className containsString:@"Container"] || [className containsString:@"Panel"];
+    BOOL isImage = [view isKindOfClass:UIImageView.class];
+    BOOL isScroll = [view isKindOfClass:UIScrollView.class];
+    // The stock app uses several private, generically named UIView classes
+    // for the speed card, result cards, compare chart, and feedback surface.
+    // Restrict the fallback to those scoped surfaces so Map/Video remain
+    // untouched, while still making every supported theme visibly apply on
+    // different OS/device builds.
+    BOOL isSurface = [className containsString:@"Card"] || [className containsString:@"Container"] || [className containsString:@"Panel"] ||
+                     [className containsString:@"Speed"] || [className containsString:@"Result"] ||
+                     [className containsString:@"Compare"] || [className containsString:@"Feedback"] ||
+                     [className containsString:@"Chart"] || [className containsString:@"Graph"] ||
+                     [className containsString:@"Controls"] || [className containsString:@"Guide"] ||
+                     [className containsString:@"Provider"] || [className containsString:@"Server"];
     if (view.superview == nil) view.backgroundColor = theme.background;
-    else if (isSurface && view.backgroundColor && CGColorGetAlpha(view.backgroundColor.CGColor) > 0.2) view.backgroundColor = theme.surface;
+    else if (!isLabel && !isControl && !isImage && !isScroll && view.backgroundColor &&
+             (isSurface || CGColorGetAlpha(view.backgroundColor.CGColor) > 0.05)) {
+        view.backgroundColor = theme.surface;
+    }
     if (isLabel) {
         UILabel *label = (UILabel *)view;
         if (label.textColor && CGColorGetAlpha(label.textColor.CGColor) > 0.2) {
-            CGFloat white = 0;
-            [label.textColor getWhite:&white alpha:nil];
-            label.textColor = white > 0.68 ? theme.primary : theme.muted;
+            CGFloat red = 0, green = 0, blue = 0, alpha = 0;
+            BOOL hasRGB = [label.textColor getRed:&red green:&green blue:&blue alpha:&alpha];
+            CGFloat brightness = hasRGB ? (0.299 * red + 0.587 * green + 0.114 * blue) : 0.0;
+            label.textColor = brightness > 0.68 ? theme.primary : theme.muted;
         }
     } else if (isControl) {
         view.tintColor = theme.downloadStart;
