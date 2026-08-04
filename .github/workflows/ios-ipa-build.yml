@@ -48,15 +48,16 @@ jobs:
 
       - name: Package the unsigned IPA
         run: |
-          python3 -m pip install --disable-pip-version-check lief
-          python3 Scripts/build_unsigned_ipa.py \
+          python3 -m venv "$RUNNER_TEMP/speedtestplus-venv"
+          "$RUNNER_TEMP/speedtestplus-venv/bin/python" -m pip install --disable-pip-version-check lief
+          "$RUNNER_TEMP/speedtestplus-venv/bin/python" Scripts/build_unsigned_ipa.py \
             --input "$RUNNER_TEMP/SpeedtestPlus-base.ipa" \
             --dylib "${{ steps.dylib.outputs.path }}" \
             --output "$RUNNER_TEMP/SpeedtestPlus-iOS-0.1.5-isp-controls-unsigned.ipa"
-          python3 Scripts/inspect_ipa.py \
+          "$RUNNER_TEMP/speedtestplus-venv/bin/python" Scripts/inspect_ipa.py \
             "$RUNNER_TEMP/SpeedtestPlus-iOS-0.1.5-isp-controls-unsigned.ipa" \
             --output "$RUNNER_TEMP/ipa-report.json"
-          python3 Scripts/verify_hook_map.py "$RUNNER_TEMP/ipa-report.json"
+          "$RUNNER_TEMP/speedtestplus-venv/bin/python" Scripts/verify_hook_map.py "$RUNNER_TEMP/ipa-report.json"
 
       - name: Publish unsigned IPA release
         env:
