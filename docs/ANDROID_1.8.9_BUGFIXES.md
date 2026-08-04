@@ -21,6 +21,9 @@ a legally supplied base package.
 - Opening server selection refreshes page zero even when cached rows exist.
   This lets the native server manager recover after a connectivity transition;
   native provider and server selection remain untouched.
+- A transient server-list error clears the in-flight guard and retries page
+  zero at most twice while the selector is still attached. The retry is
+  bounded and lifecycle-guarded, so it cannot loop or update a destroyed view.
 - A custom download or upload target is selected once at the start of its phase.
   The live value eases toward that target, then has small settling variation.
   It is never regenerated for each callback or when a result is saved.
@@ -35,6 +38,9 @@ a legally supplied base package.
   engine is quiet.
 - `DISABLE ALL` invalidates queued live frames before clearing the active
   configuration.
+- **COPY DIAGNOSTICS** copies only platform/build/mode, override-category
+  presence, and finalized local scalars. It never copies IP/account/device
+  identifiers, exact location, credentials, or entered ISP/server text.
 - The offline-state accessor uses valid Dalvik registers, and the guarded gauge
   bridge jumps past its exception handler on the normal path.  This prevents the
   verifier crashes that only appeared when the first live frame was scheduled.
