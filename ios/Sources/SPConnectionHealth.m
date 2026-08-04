@@ -69,7 +69,7 @@ static void SPComplete(void (^completion)(NSString *summary), NSString *summary)
     NSURLSessionConfiguration *configuration = [NSURLSessionConfiguration ephemeralSessionConfiguration];
     configuration.timeoutIntervalForRequest = 4.0;
     configuration.timeoutIntervalForResource = 5.0;
-    configuration.HTTPShouldHandleCookies = NO;
+    configuration.HTTPShouldSetCookies = NO;
     configuration.URLCache = nil;
     configuration.HTTPCookieStorage = nil;
     configuration.requestCachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
