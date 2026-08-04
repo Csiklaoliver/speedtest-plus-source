@@ -39,7 +39,7 @@ current development machine cannot run or sign the iOS build.
 - Loading fills the fields but does not activate them until Apply.
 - The active badge is hidden with zero overrides.
 - The badge count matches the eight override categories.
-- Hiding the panel removes the visible S+ button.
+- Hiding the panel removes the visible ISP-row info button.
 - Long-press opens the unlock prompt and a valid password opens controls.
 - The guide appears once and can be reopened from the info button.
 
@@ -70,4 +70,3 @@ current development machine cannot run or sign the iOS build.
 Please include the device model, iOS version, signing method, app version, exact
 steps, a screen recording, and any crash log from Settings > Privacy & Security >
 Analytics & Improvements > Analytics Data.
-

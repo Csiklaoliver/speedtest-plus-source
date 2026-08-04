@@ -14,7 +14,43 @@
 @implementation SPControlsViewController
 
 + (void)presentFrom:(UIViewController *)presenter {
-    if (!presenter || presenter.presentedViewController) return;
+    if (!presenter) return;
+
+    // The guide and validation messages are UIAlertControllers.  UIKit keeps
+    // the alert attached to the presenting controller for a short transition
+    // after an action is tapped.  Presenting the controls during that window
+    // used to be silently ignored, which made the admin panel look broken.
+    // Dismiss an alert/transition first, then retry from its original host.
+    UIViewController *shown = presenter.presentedViewController;
+    if (shown) {
+        if ([shown isKindOfClass:UIAlertController.class] || shown.isBeingDismissed) {
+            [presenter dismissViewControllerAnimated:YES completion:^{
+                [self presentFrom:presenter];
+            }];
+            return;
+        }
+        // If another app-owned modal is visible, presenting from its top
+        // controller is safe and avoids dismissing the user's current screen.
+        UIViewController *top = shown;
+        while (top.presentedViewController && !top.presentedViewController.isBeingDismissed) {
+            top = top.presentedViewController;
+        }
+        if (top.presentedViewController && top.presentedViewController.isBeingDismissed) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.30 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [self presentFrom:presenter];
+            });
+            return;
+        }
+        presenter = top;
+    }
+
+    if (presenter.presentedViewController) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.30 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self presentFrom:presenter];
+        });
+        return;
+    }
+
     SPControlsViewController *controller = [self new];
     UINavigationController *navigation = [[UINavigationController alloc] initWithRootViewController:controller];
     navigation.modalPresentationStyle = UIModalPresentationFormSheet;
@@ -22,6 +58,29 @@
 }
 
 + (void)presentGuideFrom:(UIViewController *)presenter allowOpenControls:(BOOL)allowOpenControls {
+    if (!presenter) return;
+    UIViewController *shown = presenter.presentedViewController;
+    if (shown) {
+        if ([shown isKindOfClass:UIAlertController.class] || shown.isBeingDismissed) {
+            [presenter dismissViewControllerAnimated:YES completion:^{
+                [self presentGuideFrom:presenter allowOpenControls:allowOpenControls];
+            }];
+            return;
+        }
+        UIViewController *top = shown;
+        while (top.presentedViewController && !top.presentedViewController.isBeingDismissed) {
+            top = top.presentedViewController;
+        }
+        if (top.presentedViewController && top.presentedViewController.isBeingDismissed) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.30 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [self presentGuideFrom:presenter allowOpenControls:allowOpenControls];
+            });
+            return;
+        }
+        presenter = top;
+    }
+    if (presenter.presentedViewController) return;
+
     NSString *message = @"1. Open the provider drawer.\n2. Long-press the provider row or tap Open Controls.\n3. Blank fields keep real values.\n4. Equal minimum and maximum gives an exact speed. A range gives a varied result.\n5. Tap Apply before GO.\n6. Local results, Compare Your Speed, sharing, and CSV use the final shown values.\n7. Disable All returns testing to normal.";
     UIAlertController *guide = [UIAlertController alertControllerWithTitle:@"Speedtest+ guide" message:message preferredStyle:UIAlertControllerStyleAlert];
     if (allowOpenControls) {
@@ -279,14 +338,28 @@
 }
 
 - (void)showMessage:(NSString *)message {
+    if (self.presentedViewController) {
+        // Action sheets and alerts dismiss asynchronously.  Queue our result
+        // message instead of attempting a second presentation on top of one.
+        [self dismissViewControllerAnimated:YES completion:^{
+            [self showMessage:message];
+        }];
+        return;
+    }
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Speedtest+" message:message preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)presentAfterCurrentAlertDismisses:(UIViewController *)controller {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if (!self.presentedViewController) [self presentViewController:controller animated:YES completion:nil];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.presentedViewController) {
+            [self dismissViewControllerAnimated:YES completion:^{
+                [self presentViewController:controller animated:YES completion:nil];
+            }];
+        } else {
+            [self presentViewController:controller animated:YES completion:nil];
+        }
     });
 }
 
@@ -299,7 +372,7 @@
     [self showMessage:@"Settings applied. Start a new test to use them."];
 }
 
-- (void)disableAll { [SPState.shared disableAll]; [self showMessage:@"All overrides are disabled."]; }
+- (void)disableAll { [self dismissKeyboard]; [SPState.shared disableAll]; [self showMessage:@"All overrides are disabled."]; }
 - (void)close { [self dismissViewControllerAnimated:YES completion:nil]; }
 
 - (void)chooseTheme {

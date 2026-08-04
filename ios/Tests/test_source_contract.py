@@ -45,6 +45,8 @@ class SourceContractTests(unittest.TestCase):
         fallback = TWEAK[TWEAK.index("static void SPAttachControls"):TWEAK.index("static void SPAttachProviderControls")]
         self.assertNotIn("UILongPressGestureRecognizer", fallback)
         self.assertNotIn("bottomAnchor", fallback)
+        self.assertNotIn("rightBarButtonItems", fallback)
+        self.assertNotIn("SPControlBarItemKey", TWEAK)
 
     def test_provider_info_icon_is_attached_to_isp_row(self):
         provider = TWEAK[TWEAK.index("static void SPAttachProviderControls"):TWEAK.index("static BOOL SPIsScopedController")]
