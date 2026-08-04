@@ -88,6 +88,15 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("checkSilentlyFromViewController", TWEAK)
         self.assertIn('@"educational"', TWEAK)
 
+    def test_native_setup_blocks_every_custom_speed_surface(self):
+        provider = TWEAK[TWEAK.index("static void SPAttachProviderControls"):TWEAK.index("static void SPFindProviderControlsInView")]
+        self.assertIn("if (SPHasNativeSetupSurface(presenter)) return;", provider)
+        layout = TWEAK[TWEAK.index("static void SPAttachProviderControlsAfterLayout"):TWEAK.index("static BOOL SPIsScopedController")]
+        self.assertIn("if (SPHasNativeSetupSurface(controller)) return;", layout)
+        badge = TWEAK[TWEAK.index("static void SPRefreshBadge"):TWEAK.index("static BOOL SPViewIsDescendantOf")]
+        self.assertIn("if (SPHasNativeSetupSurface(controller)) return;", badge)
+        self.assertIn("if (!SPHasNativeSetupSurface((UIViewController *)self))", TWEAK)
+
     def test_update_version_matches_current_ipa(self):
         self.assertIn('SPCurrentVersion = @"0.1.15"', UPDATER)
 
@@ -104,7 +113,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("static BOOL SPLooksLikeStockSetupController", TWEAK)
         self.assertIn('@"intro"', TWEAK)
         self.assertIn('@"permission"', TWEAK)
-        self.assertIn("if (SPHasStockSetupModal(host)) return", TWEAK)
+        self.assertIn("if (SPHasNativeSetupSurface(host)) return", TWEAK)
 
     def test_provider_host_lifecycle_hooks_cover_rebuilt_rows(self):
         for name in ("setHostView:", "setHostNameLabel:", "setHostLocationLabel:"):

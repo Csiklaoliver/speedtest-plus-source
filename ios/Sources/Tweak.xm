@@ -396,6 +396,7 @@ static UIViewController *SPPresenter(id object) {
 }
 
 static BOOL SPHasStockSetupModal(UIViewController *controller);
+static BOOL SPHasNativeSetupSurface(UIViewController *controller);
 
 static void SPPresentUnlock(UIViewController *presenter) {
     UIViewController *host = presenter ?: SPPresenter(nil);
@@ -403,7 +404,7 @@ static void SPPresentUnlock(UIViewController *presenter) {
     // Never put the custom controls or unlock alert above the stock privacy,
     // permission, or onboarding flow.  Continue must remain the only active
     // action until that native flow has finished.
-    if (SPHasStockSetupModal(host)) return;
+    if (SPHasNativeSetupSurface(host)) return;
     if (!SPState.shared.panelHidden) { [SPControlsViewController presentFrom:host]; return; }
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Unlock Speedtest+" message:nil preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) { field.placeholder = @"Password"; field.secureTextEntry = YES; }];
@@ -480,6 +481,7 @@ static void SPApplyProviderLabels(id hostController) {
 
 static void SPRefreshBadge(UIViewController *controller) {
     if (![controller isKindOfClass:UIViewController.class]) return;
+    if (SPHasNativeSetupSurface(controller)) return;
     UIButton *button = [controller.view viewWithTag:SPButtonTag];
     UILabel *badge = [controller.view viewWithTag:SPBadgeTag];
     NSInteger count = SPState.shared.activeOverrideCount;
@@ -683,6 +685,7 @@ static UIButton *SPInstallFallbackProviderButton(UIViewController *controller, U
 
 static void SPAttachFallbackProviderControls(UIViewController *controller) {
     if (![controller isKindOfClass:UIViewController.class] || [controller.view viewWithTag:SPButtonTag]) return;
+    if (SPHasNativeSetupSurface(controller)) return;
     UILabel *label = SPFallbackProviderLabel(controller);
     if (!label) return;
     SPInstallFallbackProviderButton(controller, label);
@@ -721,6 +724,7 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
     if (![ispView isKindOfClass:UIView.class]) return;
     UIViewController *presenter = SPViewControllerForView(ispView);
     if (!presenter) return;
+    if (SPHasNativeSetupSurface(presenter)) return;
     [SPConnectionHealth noteNativeServerListReady:YES];
 
     UIButton *existing = [presenter.view viewWithTag:SPButtonTag];
@@ -830,12 +834,12 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
     observer.token = [[NSNotificationCenter defaultCenter] addObserverForName:nil object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
         UIViewController *strongPresenter = weakPresenter;
         id strongHost = weakHost;
-        if ([note.name isEqualToString:SPThemeDidChangeNotification] && strongPresenter) {
+        if ([note.name isEqualToString:SPThemeDidChangeNotification] && strongPresenter && !SPHasNativeSetupSurface(strongPresenter)) {
             [SPTheme applyTheme:[SPTheme themeAtIndex:SPState.shared.themeIndex] toView:strongPresenter.view];
         }
         if ([note.name isEqualToString:SPStateDidChangeNotification]) {
-            if (strongPresenter) SPRefreshBadge(strongPresenter);
-            if (strongHost) SPApplyProviderLabels(strongHost);
+            if (strongPresenter && !SPHasNativeSetupSurface(strongPresenter)) SPRefreshBadge(strongPresenter);
+            if (strongHost && strongPresenter && !SPHasNativeSetupSurface(strongPresenter)) SPApplyProviderLabels(strongHost);
         }
     }];
     objc_setAssociatedObject(hostController, SPObserverTokenKey, observer, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -979,7 +983,7 @@ static void SPQueueIntroGuideAttempt(UIViewController *controller, NSInteger att
         if (!strongController || SPState.shared.introSeen) return;
         SPFindProviderControlsInView(strongController.view);
         UIButton *providerButton = [strongController.view viewWithTag:SPButtonTag];
-        if (strongController.presentedViewController || SPHasStockSetupModal(strongController) || !providerButton) {
+        if (strongController.presentedViewController || SPHasNativeSetupSurface(strongController) || !providerButton) {
             SPQueueIntroGuideAttempt(strongController, attempt + 1);
             return;
         }
@@ -989,6 +993,7 @@ static void SPQueueIntroGuideAttempt(UIViewController *controller, NSInteger att
 
 static void SPAttachProviderControlsAfterLayout(UIViewController *controller) {
     if (![controller isKindOfClass:UIViewController.class]) return;
+    if (SPHasNativeSetupSurface(controller)) return;
     // Do not treat any existing tag as proof that the button is still on the
     // current provider row.  iOS rebuilds that row after server selection;
     // the old button can remain on the controller while the visible row has
@@ -1155,10 +1160,12 @@ static void HookSpeedViewDidLayoutSubviews(id self, SEL _cmd) {
 static void (*OrigSpeedViewWillAppear)(id, SEL, BOOL);
 static void HookSpeedViewWillAppear(id self, SEL _cmd, BOOL animated) {
     OrigSpeedViewWillAppear(self, _cmd, animated);
-    SPApplyIdentityLabels(self);
     SPHideOfficialUpdateBanner(self);
-    SPRefreshBadge(self);
-    SPApplyThemeToController(self);
+    if (!SPHasNativeSetupSurface((UIViewController *)self)) {
+        SPApplyIdentityLabels(self);
+        SPRefreshBadge(self);
+        SPApplyThemeToController(self);
+    }
 }
 
 static void (*OrigSuiteStagePrepared)(id, SEL, unsigned char);
