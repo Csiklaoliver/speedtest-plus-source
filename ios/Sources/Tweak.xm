@@ -20,6 +20,7 @@ static const NSInteger SPBadgeTag = 0x53505032;
 // a floating control and is never added to the gauge or navigation bar.
 static const NSInteger SPProviderHotspotTag = 0x53505033;
 static const void *SPObserverTokenKey = &SPObserverTokenKey;
+static const void *SPProviderLayoutRetryKey = &SPProviderLayoutRetryKey;
 
 static id SPObject(id object, SEL selector);
 
@@ -393,7 +394,11 @@ static void SPPresentUnlock(UIViewController *presenter) {
 
 @implementation SPActionTarget
 - (void)openControls { SPPresentUnlock(self.presenter ?: SPPresenter(nil)); }
-- (void)openGuide { [SPControlsViewController presentGuideFrom:self.presenter ?: SPPresenter(nil) allowOpenControls:YES]; }
+- (void)openGuide {
+    UIViewController *host = self.presenter ?: SPPresenter(nil);
+    if (SPState.shared.panelHidden) SPPresentUnlock(host);
+    else [SPControlsViewController presentGuideFrom:host allowOpenControls:YES];
+}
 - (void)longPressed:(UILongPressGestureRecognizer *)recognizer { if (recognizer.state == UIGestureRecognizerStateBegan) SPPresentUnlock(self.presenter); }
 @end
 
@@ -442,7 +447,13 @@ static void SPRefreshBadge(UIViewController *controller) {
     UIButton *button = [controller.view viewWithTag:SPButtonTag];
     UILabel *badge = [controller.view viewWithTag:SPBadgeTag];
     NSInteger count = SPState.shared.activeOverrideCount;
-    button.hidden = SPState.shared.panelHidden;
+    // Keep the Speedtest+ affordance present even when the panel is locked.
+    // Hiding it made the password-protected mode impossible to rediscover on
+    // builds where the provider long-press was swallowed by a private view.
+    button.hidden = NO;
+    button.accessibilityHint = SPState.shared.panelHidden
+        ? @"Unlocks the password-protected Speedtest+ controls"
+        : @"Opens the Speedtest+ guide and controls";
     badge.hidden = count == 0 || SPState.shared.panelHidden;
     badge.text = [NSString stringWithFormat:@"CUSTOM \u2022 %ld", (long)count];
 }
@@ -475,6 +486,7 @@ static void SPInstallProviderLongPress(UIView *view, SPActionTarget *target) {
 
 static UIButton *SPInstallProviderHotspot(UIViewController *presenter, UIView *providerView, UILabel *ispLabel, SPActionTarget *target) {
     if (!presenter || ![providerView isKindOfClass:UIView.class] || !target) return nil;
+    providerView.userInteractionEnabled = YES;
     UIButton *hotspot = [presenter.view viewWithTag:SPProviderHotspotTag];
     if (hotspot && !SPViewIsDescendantOf(hotspot, providerView)) {
         [hotspot removeFromSuperview];
@@ -485,9 +497,10 @@ static UIButton *SPInstallProviderHotspot(UIViewController *presenter, UIView *p
         hotspot.tag = SPProviderHotspotTag;
         hotspot.translatesAutoresizingMaskIntoConstraints = NO;
         hotspot.backgroundColor = UIColor.clearColor;
-        hotspot.alpha = 0.02; // still hit-testable, but visually invisible
+        hotspot.alpha = 0.01; // still hit-testable, but visually invisible
         hotspot.isAccessibilityElement = NO;
         hotspot.accessibilityElementsHidden = YES;
+        hotspot.accessibilityIdentifier = @"speedtest_plus_controls_hotspot";
         [providerView addSubview:hotspot];
         [hotspot.widthAnchor constraintEqualToConstant:48].active = YES;
         [hotspot.heightAnchor constraintEqualToConstant:48].active = YES;
@@ -501,6 +514,7 @@ static UIButton *SPInstallProviderHotspot(UIViewController *presenter, UIView *p
     [hotspot removeTarget:nil action:NULL forControlEvents:UIControlEventTouchUpInside];
     [hotspot addTarget:target action:@selector(openControls) forControlEvents:UIControlEventTouchUpInside];
     hotspot.hidden = NO;
+    [providerView bringSubviewToFront:hotspot];
     objc_setAssociatedObject(providerView, SPProviderHotspotKey, hotspot, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     return hotspot;
 }
@@ -528,11 +542,13 @@ static void SPAttachControls(UIViewController *controller) {
 static void SPAttachProviderControls(id hostController, UIStackView *stack) {
     UIView *ispView = SPObject(hostController, NSSelectorFromString(@"ispView"));
     UILabel *ispLabel = SPLabel(hostController, @"ispNameLabel");
-    if (![ispLabel isKindOfClass:UILabel.class]) return;
     // A few iOS builds return nil for the private ispView accessor even though
     // the label is already attached.  Use its row as a safe provider-only
-    // fallback instead of abandoning the controls entry point.
-    if (![ispView isKindOfClass:UIView.class]) ispView = ispLabel.superview;
+    // fallback instead of abandoning the controls entry point.  If the label
+    // accessor itself changed, the provider host/stack is still a safe custom
+    // anchor for the Speedtest+ button and gesture.
+    if (![ispView isKindOfClass:UIView.class] && [ispLabel.superview isKindOfClass:UIView.class]) ispView = ispLabel.superview;
+    if (![ispView isKindOfClass:UIView.class] && [stack isKindOfClass:UIView.class]) ispView = stack;
     if (![ispView isKindOfClass:UIView.class]) return;
     UIViewController *presenter = SPViewControllerForView(ispView);
     if (!presenter) return;
@@ -607,10 +623,19 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
     ]];
 
     UIView *ispRow = ispLabel.superview;
-    if ([ispRow isKindOfClass:UIStackView.class] && [((UIStackView *)ispRow).arrangedSubviews containsObject:ispLabel]) {
+    if ([ispLabel isKindOfClass:UILabel.class] && [ispRow isKindOfClass:UIStackView.class] && [((UIStackView *)ispRow).arrangedSubviews containsObject:ispLabel]) {
         UIStackView *row = (UIStackView *)ispRow;
         NSUInteger labelIndex = [row.arrangedSubviews indexOfObject:ispLabel];
         [row insertArrangedSubview:button atIndex:MIN(labelIndex + 1, row.arrangedSubviews.count)];
+    } else if (![ispLabel isKindOfClass:UILabel.class]) {
+        // The label getter is private and has changed between app builds.  A
+        // trailing button on the provider host keeps the custom entry point
+        // available without changing any stock server controls.
+        [ispView addSubview:button];
+        [NSLayoutConstraint activateConstraints:@[
+            [button.trailingAnchor constraintEqualToAnchor:ispView.trailingAnchor constant:-4],
+            [button.centerYAnchor constraintEqualToAnchor:ispView.centerYAnchor]
+        ]];
     } else {
         UIView *container = [ispRow isKindOfClass:UIView.class] && SPViewIsDescendantOf(ispLabel, ispRow) ? ispRow : ispView;
         [container addSubview:button];
@@ -623,8 +648,10 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
 
     UIView *providerView = ispView;
     SPInstallProviderLongPress(providerView, target);
-    SPInstallProviderLongPress(ispLabel, target);
-    if (ispLabel.superview != providerView) SPInstallProviderLongPress(ispLabel.superview, target);
+    if ([ispLabel isKindOfClass:UILabel.class]) {
+        SPInstallProviderLongPress(ispLabel, target);
+        if (ispLabel.superview != providerView) SPInstallProviderLongPress(ispLabel.superview, target);
+    }
     SPInstallProviderHotspot(presenter, providerView, ispLabel, target);
     __weak UIViewController *weakPresenter = presenter;
     __weak id weakHost = hostController;
@@ -668,6 +695,19 @@ static void SPRetryProviderControls(UIViewController *controller) {
             if (strongController) SPFindProviderControlsInView(strongController.view);
         });
     }
+}
+
+static void SPAttachProviderControlsAfterLayout(UIViewController *controller) {
+    if (![controller isKindOfClass:UIViewController.class] ||
+        [controller.view viewWithTag:SPButtonTag]) return;
+    // The provider host is lazy on some iOS builds and can be created after
+    // both viewDidLoad and viewDidAppear.  Use the first few layout passes as
+    // a bounded retry, rather than relying on a private setter being called.
+    NSTimeInterval now = NSDate.timeIntervalSinceReferenceDate;
+    NSNumber *last = objc_getAssociatedObject(controller, SPProviderLayoutRetryKey);
+    if (last && now - last.doubleValue < 0.25) return;
+    objc_setAssociatedObject(controller, SPProviderLayoutRetryKey, @(now), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    SPFindProviderControlsInView(controller.view);
 }
 
 static BOOL SPIsScopedController(UIViewController *controller) {
@@ -801,6 +841,12 @@ static void HookSpeedViewDidAppear(id self, SEL _cmd, BOOL animated) {
         [SPControlsViewController presentGuideFrom:controller allowOpenControls:YES];
     }
     SPHideOfficialUpdateBanner(self);
+}
+
+static void (*OrigSpeedViewDidLayoutSubviews)(id, SEL);
+static void HookSpeedViewDidLayoutSubviews(id self, SEL _cmd) {
+    OrigSpeedViewDidLayoutSubviews(self, _cmd);
+    SPAttachProviderControlsAfterLayout((UIViewController *)self);
 }
 
 static void (*OrigSpeedViewWillAppear)(id, SEL, BOOL);
@@ -1003,6 +1049,7 @@ __attribute__((constructor)) static void SpeedtestPlusInitialize(void) {
         SPHook(speed, @"viewDidLoad", (IMP)HookSpeedViewDidLoad, (IMP *)&OrigSpeedViewDidLoad);
         SPHook(speed, @"viewWillAppear:", (IMP)HookSpeedViewWillAppear, (IMP *)&OrigSpeedViewWillAppear);
         SPHook(speed, @"viewDidAppear:", (IMP)HookSpeedViewDidAppear, (IMP *)&OrigSpeedViewDidAppear);
+        SPHook(speed, @"viewDidLayoutSubviews", (IMP)HookSpeedViewDidLayoutSubviews, (IMP *)&OrigSpeedViewDidLayoutSubviews);
         SPHook(speed, @"suiteStagePrepared:", (IMP)HookSuiteStagePrepared, (IMP *)&OrigSuiteStagePrepared);
         SPHook(speed, @"handleProgress:", (IMP)HookHandleProgress, (IMP *)&OrigHandleProgress);
         SPHook(speed, @"handleLoadedLatencyProgress:", (IMP)HookHandleLoadedLatency, (IMP *)&OrigHandleLoadedLatency);

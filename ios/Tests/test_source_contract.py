@@ -58,6 +58,8 @@ class SourceContractTests(unittest.TestCase):
     def test_provider_controls_retry_and_rebind_after_guide(self):
         self.assertIn("static void SPRetryProviderControls", TWEAK)
         self.assertIn("SPRetryProviderControls(controller)", TWEAK)
+        self.assertIn("HookSpeedViewDidLayoutSubviews", TWEAK)
+        self.assertIn("SPAttachProviderControlsAfterLayout", TWEAK)
         self.assertIn("removeTarget:nil action:NULL", TWEAK)
         self.assertIn("removeGestureRecognizer:oldGesture", TWEAK)
 
@@ -67,8 +69,21 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("userInteractionEnabled = YES", TWEAK)
         self.assertIn("SPInstallProviderLongPress(ispLabel", provider)
         self.assertIn("SPInstallProviderHotspot(presenter, providerView, ispLabel, target)", provider)
-        self.assertIn("alpha = 0.02", TWEAK)
+        self.assertIn("alpha = 0.01", TWEAK)
+        self.assertIn("bringSubviewToFront:hotspot", TWEAK)
         self.assertIn("@selector(openControls)", TWEAK)
+
+    def test_custom_button_remains_available_when_panel_is_locked(self):
+        self.assertIn("button.hidden = NO", TWEAK)
+        self.assertIn("password-protected Speedtest+ controls", TWEAK)
+        self.assertIn("speedtest_plus_controls_hotspot", TWEAK)
+        self.assertIn("if (SPState.shared.panelHidden) SPPresentUnlock(host)", TWEAK)
+
+    def test_provider_anchor_survives_private_label_changes(self):
+        provider = TWEAK[TWEAK.index("static void SPAttachProviderControls"):TWEAK.index("static BOOL SPIsScopedController")]
+        self.assertIn("[stack isKindOfClass:UIView.class]", provider)
+        self.assertIn("![ispLabel isKindOfClass:UILabel.class]", provider)
+        self.assertIn("button.trailingAnchor constraintEqualToAnchor:ispView.trailingAnchor", provider)
 
     def test_server_selection_is_not_hooked(self):
         self.assertNotIn("didSelectRowAtIndexPath", TWEAK)

@@ -83,7 +83,7 @@
     }
     if (presenter.presentedViewController) return;
 
-    NSString *message = @"1. Open the provider drawer.\n2. Long-press the provider row or tap Open Controls.\n3. Blank fields keep real values.\n4. Equal minimum and maximum gives an exact speed. A range gives a varied result.\n5. Tap Apply before GO.\n6. Local results, Compare Your Speed, sharing, and CSV use the final shown values.\n7. Disable All returns testing to normal.";
+    NSString *message = @"1. Open the provider drawer.\n2. Long-press the provider row or tap the Speedtest+ info button.\n3. Blank fields keep real values.\n4. Equal minimum and maximum gives an exact speed. A range gives a varied result.\n5. Tap Apply before GO.\n6. Local results, Compare Your Speed, sharing, and CSV use the final shown values.\n7. Disable All returns testing to normal.";
     UIAlertController *guide = [UIAlertController alertControllerWithTitle:@"Speedtest+ guide" message:message preferredStyle:UIAlertControllerStyleAlert];
     if (allowOpenControls) {
         [guide addAction:[UIAlertAction actionWithTitle:@"Open Controls" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
@@ -478,7 +478,7 @@
 }
 
 - (void)configureLock {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Protect controls" message:@"Leave the password blank to keep the panel visible. If hidden, long-press the provider area to unlock it." preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Protect controls" message:@"Leave the password blank to keep the panel visible. If hidden, tap the Speedtest+ info button or long-press the provider area to unlock it." preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) { field.placeholder = @"Optional password"; field.secureTextEntry = YES; }];
     [alert addAction:[UIAlertAction actionWithTitle:@"Keep visible" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { [SPState.shared setPanelHidden:NO password:nil]; }]];
     [alert addAction:[UIAlertAction actionWithTitle:@"Hide" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { [SPState.shared setPanelHidden:YES password:alert.textFields.firstObject.text]; }]];
