@@ -394,9 +394,15 @@ static UIViewController *SPPresenter(id object) {
     return SPTopController(controller);
 }
 
+static BOOL SPHasStockSetupModal(UIViewController *controller);
+
 static void SPPresentUnlock(UIViewController *presenter) {
     UIViewController *host = presenter ?: SPPresenter(nil);
     if (!host) return;
+    // Never put the custom controls or unlock alert above the stock privacy,
+    // permission, or onboarding flow.  Continue must remain the only active
+    // action until that native flow has finished.
+    if (SPHasStockSetupModal(host)) return;
     if (!SPState.shared.panelHidden) { [SPControlsViewController presentFrom:host]; return; }
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Unlock Speedtest+" message:nil preferredStyle:UIAlertControllerStyleAlert];
     [alert addTextFieldWithConfigurationHandler:^(UITextField *field) { field.placeholder = @"Password"; field.secureTextEntry = YES; }];
@@ -875,15 +881,35 @@ static void SPRetryProviderControls(UIViewController *controller) {
 // present underneath an alert and makes it appear unresponsive.  Wait until
 // the provider row (our real entry point) is attached and never put the guide
 // above a stock onboarding/setup controller.
+static BOOL SPLooksLikeStockSetupController(UIViewController *controller) {
+    if (!controller) return NO;
+    NSString *name = NSStringFromClass(controller.class).lowercaseString;
+    for (NSString *token in @[@"onboarding", @"educational", @"setup", @"privacy", @"consent", @"intro", @"permission", @"welcome"]) {
+        if ([name containsString:token]) return YES;
+    }
+    return NO;
+}
+
 static BOOL SPHasStockSetupModal(UIViewController *controller) {
-    UIViewController *shown = controller.presentedViewController;
-    if (!shown) return NO;
-    NSString *name = NSStringFromClass(shown.class).lowercaseString;
-    return [name containsString:@"onboarding"] ||
-           [name containsString:@"educational"] ||
-           [name containsString:@"setup"] ||
-           [name containsString:@"privacy"] ||
-           [name containsString:@"consent"];
+    if (!controller) return NO;
+    // Check the exact child first; a Swift setup controller can be presented
+    // by a child inside UINavigationController rather than by the container.
+    for (UIViewController *direct = controller; direct; direct = direct.presentingViewController) {
+        if (SPLooksLikeStockSetupController(direct)) return YES;
+        if (direct.presentedViewController && !direct.presentedViewController.isBeingDismissed) {
+            UIViewController *shown = direct.presentedViewController;
+            while (shown) {
+                if (SPLooksLikeStockSetupController(shown)) return YES;
+                if ([shown isKindOfClass:UIAlertController.class]) return YES;
+                shown = shown.presentedViewController;
+            }
+        }
+        if (direct.navigationController.visibleViewController &&
+            SPLooksLikeStockSetupController(direct.navigationController.visibleViewController)) return YES;
+        if (direct.tabBarController.selectedViewController &&
+            SPLooksLikeStockSetupController(direct.tabBarController.selectedViewController)) return YES;
+    }
+    return NO;
 }
 
 static void SPQueueIntroGuideAttempt(UIViewController *controller, NSInteger attempt) {
