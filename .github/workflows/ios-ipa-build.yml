@@ -18,7 +18,7 @@ jobs:
       run:
         working-directory: ios
     env:
-      THEOS: ${{ runner.temp }}/theos
+      THEOS: ${{ github.workspace }}/.theos-ci
       RELEASE_TAG: ${{ inputs.release_tag }}
     steps:
       - name: Check out source
