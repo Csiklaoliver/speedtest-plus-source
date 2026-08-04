@@ -2,12 +2,12 @@
 #import "SPState.h"
 
 static NSString *SPDiagnosticNumber(id value, NSString *suffix) {
-    if (![value isKindOfClass:NSNumber.class]) return @"—";
+    if (![value isKindOfClass:NSNumber.class]) return @"N/A";
     return [NSString stringWithFormat:@"%.1f%@", [value doubleValue], suffix ?: @""];
 }
 
 static NSString *SPDiagnosticInteger(id value, NSString *suffix) {
-    if (![value isKindOfClass:NSNumber.class]) return @"—";
+    if (![value isKindOfClass:NSNumber.class]) return @"N/A";
     return [NSString stringWithFormat:@"%ld%@", (long)[value integerValue], suffix ?: @""];
 }
 

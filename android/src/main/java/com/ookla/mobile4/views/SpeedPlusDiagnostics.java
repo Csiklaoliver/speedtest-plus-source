@@ -98,14 +98,14 @@ public final class SpeedPlusDiagnostics {
     }
 
     private static String number(SharedPreferences prefs, String key, String validKey, String suffix) {
-        if (validKey != null && !prefs.getBoolean(validKey, false)) return "—";
+        if (validKey != null && !prefs.getBoolean(validKey, false)) return "N/A";
         try { return String.format(Locale.US, "%.1f%s", Double.parseDouble(prefs.getString(key, "")), suffix); }
-        catch (RuntimeException ignored) { return "—"; }
+        catch (RuntimeException ignored) { return "N/A"; }
     }
 
     private static String integer(SharedPreferences prefs, String key, String suffix) {
         try { return Long.parseLong(prefs.getString(key, "")) + suffix; }
-        catch (RuntimeException ignored) { return "—"; }
+        catch (RuntimeException ignored) { return "N/A"; }
     }
 
     private static String clean(String value, String fallback) {

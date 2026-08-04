@@ -69,12 +69,12 @@ public final class DiagnosticsSnapshot {
     }
 
     private static String number(Object value, String suffix) {
-        if (!(value instanceof Number)) return "—";
+        if (!(value instanceof Number)) return "N/A";
         return String.format(Locale.US, "%.1f%s", ((Number) value).doubleValue(), suffix);
     }
 
     private static String integer(Object value, String suffix) {
-        if (!(value instanceof Number)) return "—";
+        if (!(value instanceof Number)) return "N/A";
         return String.format(Locale.US, "%d%s", ((Number) value).longValue(), suffix);
     }
 
