@@ -13,6 +13,7 @@ SHARE = (ROOT / "Sources" / "SPShareBuilder.m").read_text(encoding="utf-8")
 CONTROLS = (ROOT / "Sources" / "SPControlsViewController.m").read_text(encoding="utf-8")
 STATE = (ROOT / "Sources" / "SPState.m").read_text(encoding="utf-8")
 DIAGNOSTICS = (ROOT / "Sources" / "SPDiagnostics.m").read_text(encoding="utf-8")
+MOTION = (ROOT / "Sources" / "SPMotion.m").read_text(encoding="utf-8")
 
 
 class SourceContractTests(unittest.TestCase):
@@ -79,11 +80,13 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("static BOOL SPHasStockSetupModal", TWEAK)
         self.assertIn("static void SPQueueIntroGuideAttempt", TWEAK)
         self.assertIn("!providerButton", TWEAK)
-        self.assertIn("SPQueueIntroGuideAttempt(controller, 0)", TWEAK)
-        self.assertIn('containsString:@"educational"', TWEAK)
+        self.assertNotIn("if (!SPState.shared.introSeen) SPQueueIntroGuideAttempt(controller, 0);", TWEAK)
+        self.assertIn("native first-run flow owns", TWEAK)
+        self.assertIn("checkSilentlyFromViewController", TWEAK)
+        self.assertIn('@"educational"', TWEAK)
 
     def test_update_version_matches_current_ipa(self):
-        self.assertIn('SPCurrentVersion = @"0.1.13"', UPDATER)
+        self.assertIn('SPCurrentVersion = @"0.1.14"', UPDATER)
 
     def test_update_prompt_defers_to_native_setup_and_existing_modals(self):
         self.assertIn("SPIsNativeSetupController", UPDATER)
@@ -91,6 +94,14 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("SPShowUpdateWhenReady", UPDATER)
         self.assertIn("attempt > 20", UPDATER)
         self.assertIn("Continue action is visible", UPDATER)
+        self.assertIn("navigationController", UPDATER)
+        self.assertIn("presentingViewController", UPDATER)
+
+    def test_custom_guide_and_unlock_are_blocked_during_native_setup(self):
+        self.assertIn("static BOOL SPLooksLikeStockSetupController", TWEAK)
+        self.assertIn('@"intro"', TWEAK)
+        self.assertIn('@"permission"', TWEAK)
+        self.assertIn("if (SPHasStockSetupModal(host)) return", TWEAK)
 
     def test_provider_host_lifecycle_hooks_cover_rebuilt_rows(self):
         for name in ("setHostView:", "setHostNameLabel:", "setHostLocationLabel:"):
@@ -143,6 +154,19 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("button.alpha = 1.0", provider)
         self.assertIn("SPAttachFallbackProviderControls(strongController)", TWEAK)
         self.assertIn("@2.5", TWEAK)
+
+    def test_provider_fallback_rejects_survey_question_labels(self):
+        provider = TWEAK[TWEAK.index("static BOOL SPFallbackLabelIsUsable"):
+                         TWEAK.index("static BOOL SPFallbackLabelIsInNonProviderSurface")]
+        for text in ("how would", "how does", "expectation", "compare your", "rate "):
+            self.assertIn(text, provider)
+
+    def test_feedback_prompt_is_rewritten_even_when_private_title_accessor_changes(self):
+        start = TWEAK.index("static void HookFeedbackViewDidLoad")
+        end = TWEAK.index("static void SPRewriteSurveyLabels", start + 1)
+        feedback = TWEAK[start:end]
+        self.assertIn("SPRewriteSurveyLabels", feedback)
+        self.assertIn("titleLabel", feedback)
 
     def test_server_selection_is_not_hooked(self):
         self.assertNotIn("didSelectRowAtIndexPath", TWEAK)
@@ -211,6 +235,16 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("no IP address", DIAGNOSTICS)
         self.assertIn("identity text", DIAGNOSTICS)
         self.assertIn("Active overrides", DIAGNOSTICS)
+
+    def test_reduced_motion_is_local_and_presentation_only(self):
+        self.assertIn('setReduceMotionEnabled:', (ROOT / "Sources" / "SPState.h").read_text(encoding="utf-8"))
+        self.assertIn('self.reduceMotionSwitch', CONTROLS)
+        self.assertIn('Reduce gauge motion', CONTROLS)
+        self.assertIn('UIAccessibilityIsReduceMotionEnabled', STATE)
+        self.assertIn('SPMotionPresentationProgress', STATE)
+        self.assertIn('safeElapsed / 8.0 * 0.96', MOTION)
+        self.assertIn('return reducedMotion ? 0.0', MOTION)
+        self.assertNotIn('NSURL', MOTION)
 
 
 if __name__ == "__main__":

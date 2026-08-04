@@ -11,8 +11,9 @@ REQUIRED = [
     "Makefile", "control", "SpeedtestPlus.plist", "README.md", "NOTICE.md",
     "Sources/Tweak.xm", "Sources/SPState.m", "Sources/SPCurve.m",
     "Sources/SPControlsViewController.m", "Sources/SPDiagnostics.m", "Sources/SPTheme.m",
-    "Sources/SPShareBuilder.m", "Sources/SPUpdater.m",
+    "Sources/SPShareBuilder.m", "Sources/SPUpdater.m", "Sources/SPMotion.m",
     "docs/HOOK_MAP.md", "docs/BUILD_AND_SIGN.md", "docs/REVIEW_CHECKLIST.md",
+    "../docs/REDUCED_MOTION.md",
     "Scripts/inspect_ipa.py", "Scripts/package_review.py", "Scripts/verify_hook_map.py", "Scripts/verify_objc_syntax.py", "Tests/test_curve.py", "Tests/test_source_contract.py",
 ]
 SECRET_PATTERNS = [

@@ -1065,7 +1065,6 @@ static void HookSpeedViewDidLoad(id self, SEL _cmd) {
     SPApplyThemeToController(controller);
     UIView *ad = SPObject(self, NSSelectorFromString(@"rectangleAdView"));
     ad.hidden = YES;
-    [[SPUpdater shared] checkSilentlyFromViewController:controller];
 }
 
 static void (*OrigSpeedViewDidAppear)(id, SEL, BOOL);
@@ -1076,7 +1075,19 @@ static void HookSpeedViewDidAppear(id self, SEL _cmd, BOOL animated) {
     // after the screen is on-window so the ISP-row button remains available
     // even when the private host setter is not observed on this app build.
     SPRetryProviderControls(controller);
-    if (!SPState.shared.introSeen) SPQueueIntroGuideAttempt(controller, 0);
+    // The native first-run flow owns this screen.  Do not automatically put a
+    // Speedtest+ guide or unlock sheet above it: on iOS the stock Continue
+    // action can be visible underneath a modal and appear unresponsive.  Help
+    // remains available from the provider-row info button, and update checks
+    // begin only after this view is visible and native setup has settled.
+    if (!SPHasStockSetupModal(controller) && !controller.presentedViewController) {
+        __weak UIViewController *weakController = controller;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            UIViewController *strongController = weakController;
+            if (!strongController || SPHasStockSetupModal(strongController) || strongController.presentedViewController) return;
+            [[SPUpdater shared] checkSilentlyFromViewController:strongController];
+        });
+    }
     SPHideOfficialUpdateBanner(self);
 }
 
