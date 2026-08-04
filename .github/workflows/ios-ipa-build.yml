@@ -1,0 +1,86 @@
+name: iOS unsigned IPA
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "GitHub release tag to publish"
+        required: true
+        default: "v1.4.10"
+
+permissions:
+  contents: write
+
+jobs:
+  build-ipa:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: ios
+    env:
+      THEOS: ${{ runner.temp }}/theos
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: brew install ldid
+
+      - name: Install Theos
+        run: git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
+
+      - name: Compile the tweak
+        run: make clean package FINALPACKAGE=1
+
+      - name: Download the previous clean unsigned base
+        run: |
+          curl --fail --location --retry 3 \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/v1.4.9/SpeedtestPlus-iOS-0.1.5-unsigned.ipa" \
+            --output "$RUNNER_TEMP/SpeedtestPlus-base.ipa"
+
+      - name: Locate the compiled library
+        id: dylib
+        run: |
+          dylib="$(find .theos/obj -type f -name SpeedtestPlus.dylib -not -path '*dSYM*' | head -n 1)"
+          test -n "$dylib"
+          echo "path=$PWD/$dylib" >> "$GITHUB_OUTPUT"
+
+      - name: Package the unsigned IPA
+        run: |
+          python3 -m pip install --disable-pip-version-check lief
+          python3 Scripts/build_unsigned_ipa.py \
+            --input "$RUNNER_TEMP/SpeedtestPlus-base.ipa" \
+            --dylib "${{ steps.dylib.outputs.path }}" \
+            --output "$RUNNER_TEMP/SpeedtestPlus-iOS-0.1.5-isp-controls-unsigned.ipa"
+          python3 Scripts/inspect_ipa.py \
+            "$RUNNER_TEMP/SpeedtestPlus-iOS-0.1.5-isp-controls-unsigned.ipa" \
+            --output "$RUNNER_TEMP/ipa-report.json"
+          python3 Scripts/verify_hook_map.py "$RUNNER_TEMP/ipa-report.json"
+
+      - name: Publish unsigned IPA release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="$RUNNER_TEMP/release-notes.md"
+          printf '%s\n' \
+            "This is an unsigned iOS test artifact built from commit ${GITHUB_SHA}." \
+            "It includes the reliable ISP-row long-press and hidden provider-row fallback." \
+            "Sign it with your own Apple-approved workflow before installing." \
+            "No signing keys, provisioning profiles, or decrypted base app are stored in this repository." \
+            > "$notes"
+          gh release create "$RELEASE_TAG" \
+            "$RUNNER_TEMP/SpeedtestPlus-iOS-0.1.5-isp-controls-unsigned.ipa" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Speedtest+ iOS $RELEASE_TAG" \
+            --notes-file "$notes"
+
+      - name: Upload build evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpeedtestPlus-iOS-0.1.5-build-evidence
+          path: |
+            ${{ runner.temp }}/SpeedtestPlus-iOS-0.1.5-isp-controls-unsigned.ipa
+            ${{ runner.temp }}/ipa-report.json
+          if-no-files-found: error
+          retention-days: 14
