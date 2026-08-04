@@ -423,6 +423,7 @@
                 [self showMessage:@"Theme saved; applies when Speedtest+ is reopened."];
             } else {
                 [SPTheme applyTheme:theme toView:self.view];
+                [SPTheme applyFunctionalMaterialToView:self.view theme:theme];
             }
         }]];
     }];
