@@ -9,6 +9,8 @@
 @property(nonatomic) UIStackView *stack;
 @property(nonatomic) NSMutableDictionary<NSString *, UITextField *> *fields;
 @property(nonatomic) UIButton *themeButton;
+@property(nonatomic) UISwitch *offlineSwitch;
+@property(nonatomic) UISwitch *dataSaverSwitch;
 @end
 
 @implementation SPControlsViewController
@@ -148,6 +150,20 @@
     [self addPair:@"Ping (ms)" key:@"ping" second:@"Jitter (ms)" secondKey:@"jitter" keyboard:UIKeyboardTypeNumberPad];
     [self addField:@"Packet loss (0.0 to 100.0%)" key:@"packet_loss" keyboard:UIKeyboardTypeDecimalPad];
 
+    [self addSection:@"Test modes"];
+    UILabel *modeNote = [self label:@"Offline demo never opens a network connection and is saved as a local simulation. Data saver keeps a real test but bounds transfer time and bytes per connection."];
+    modeNote.font = [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
+    modeNote.textColor = [UIColor colorWithWhite:1 alpha:0.70];
+    [self.stack addArrangedSubview:modeNote];
+    self.offlineSwitch = [UISwitch new];
+    self.dataSaverSwitch = [UISwitch new];
+    self.offlineSwitch.on = [SPState.shared.configuration[@"offline_mode"] boolValue];
+    self.dataSaverSwitch.on = [SPState.shared.configuration[@"data_saver_mode"] boolValue];
+    [self.offlineSwitch addTarget:self action:@selector(offlineSwitchChanged:) forControlEvents:UIControlEventValueChanged];
+    [self.dataSaverSwitch addTarget:self action:@selector(dataSaverSwitchChanged:) forControlEvents:UIControlEventValueChanged];
+    [self addSwitchRow:@"Offline demo (no network)" control:self.offlineSwitch];
+    [self addSwitchRow:@"Data saver (bounded real test)" control:self.dataSaverSwitch];
+
     [self addSection:@"Provider and server"];
     [self addField:@"ISP name" key:@"isp" keyboard:UIKeyboardTypeDefault];
     [self addField:@"Server provider" key:@"server_provider" keyboard:UIKeyboardTypeDefault];
@@ -254,11 +270,22 @@
     [self.stack addArrangedSubview:row];
 }
 
+- (void)addSwitchRow:(NSString *)title control:(UISwitch *)control {
+    UIStackView *row = [self horizontalStack];
+    row.distribution = UIStackViewDistributionFill;
+    UILabel *label = [self label:title];
+    [row addArrangedSubview:label];
+    [row addArrangedSubview:control];
+    [self.stack addArrangedSubview:row];
+}
+
 - (void)fillFromConfiguration:(NSDictionary<NSString *,id> *)configuration {
     [self.fields enumerateKeysAndObjectsUsingBlock:^(NSString *key, UITextField *field, BOOL *stop) {
         id value = configuration[key];
         field.text = value && value != NSNull.null ? [value description] : @"";
     }];
+    self.offlineSwitch.on = [configuration[@"offline_mode"] boolValue];
+    self.dataSaverSwitch.on = [configuration[@"data_saver_mode"] boolValue];
 }
 
 - (NSString *)trimmed:(NSString *)text { return [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet]; }
@@ -334,6 +361,8 @@
         }
         if (value.length) config[key] = value;
     }
+    if (self.offlineSwitch.isOn) config[@"offline_mode"] = @YES;
+    else if (self.dataSaverSwitch.isOn) config[@"data_saver_mode"] = @YES;
     return config;
 }
 
@@ -374,6 +403,14 @@
 
 - (void)disableAll { [self dismissKeyboard]; [SPState.shared disableAll]; [self showMessage:@"All overrides are disabled."]; }
 - (void)close { [self dismissViewControllerAnimated:YES completion:nil]; }
+
+- (void)offlineSwitchChanged:(UISwitch *)sender {
+    if (sender.isOn) self.dataSaverSwitch.on = NO;
+}
+
+- (void)dataSaverSwitchChanged:(UISwitch *)sender {
+    if (sender.isOn) self.offlineSwitch.on = NO;
+}
 
 - (void)chooseTheme {
     UIAlertController *sheet = [UIAlertController alertControllerWithTitle:@"Choose theme" message:nil preferredStyle:UIAlertControllerStyleActionSheet];

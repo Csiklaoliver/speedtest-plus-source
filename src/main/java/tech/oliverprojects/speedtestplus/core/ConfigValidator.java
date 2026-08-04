@@ -15,6 +15,13 @@ public final class ConfigValidator {
         SpeedPlusConfig output = input == null ? new SpeedPlusConfig() : input.copy();
         List<String> warnings = new ArrayList<String>();
 
+        // These modes are intentionally mutually exclusive. Offline is a
+        // hard no-network guarantee, so it takes precedence over data saver.
+        if (output.offlineMode && output.dataSaverMode) {
+            output.dataSaverMode = false;
+            warnings.add("Data saver was disabled because offline mode is enabled");
+        }
+
         if (!validRange(output.downloadMinMbps, output.downloadMaxMbps)) {
             output.downloadMinMbps = null;
             output.downloadMaxMbps = null;

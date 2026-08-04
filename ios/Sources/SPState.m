@@ -70,6 +70,10 @@ static NSDictionary<NSString *, id> *SPNormalizedConfiguration(id value) {
         if (text.length > 64) text = [text substringToIndex:64];
         if (text.length) result[key] = text;
     }
+    BOOL offline = [input[@"offline_mode"] isKindOfClass:NSNumber.class] && [input[@"offline_mode"] boolValue];
+    BOOL dataSaver = [input[@"data_saver_mode"] isKindOfClass:NSNumber.class] && [input[@"data_saver_mode"] boolValue];
+    if (offline) result[@"offline_mode"] = @YES;
+    else if (dataSaver) result[@"data_saver_mode"] = @YES;
     return [result copy];
 }
 
@@ -167,6 +171,8 @@ static NSDictionary<NSString *, id> *SPNormalizedConfiguration(id value) {
 
 - (void)disableAll {
     self.store[@"active"] = @NO;
+    [self.mutableConfiguration removeObjectForKey:@"offline_mode"];
+    [self.mutableConfiguration removeObjectForKey:@"data_saver_mode"];
     [self persist];
     [[NSNotificationCenter defaultCenter] postNotificationName:SPStateDidChangeNotification object:self];
 }
@@ -292,6 +298,12 @@ static NSString *SPPasswordHash(NSString *password) {
     return [value isKindOfClass:NSString.class] && [value length] ? value : nil;
 }
 
+- (BOOL)runBoolForKey:(NSString *)key {
+    if (!self.runActive) return NO;
+    id value = self.runConfiguration[key];
+    return [value isKindOfClass:NSNumber.class] && [value boolValue];
+}
+
 - (BOOL)runHasSpeedOverrideForDirection:(SPDirection)direction {
     if (!self.runActive) return NO;
     NSString *prefix = direction == SPDirectionDownload ? @"download" : @"upload";
@@ -376,6 +388,9 @@ static NSString *SPPasswordHash(NSString *password) {
     result[@"override_isp"] = @([self runStringForKey:@"isp"] != nil);
     result[@"override_server_provider"] = @([self runStringForKey:@"server_provider"] != nil);
     result[@"override_server_location"] = @([self runStringForKey:@"server_location"] != nil);
+    result[@"offline_demo"] = @([self runBoolForKey:@"offline_mode"]);
+    result[@"data_saver"] = @([self runBoolForKey:@"data_saver_mode"]);
+    result[@"remote_submission_allowed"] = @(![self runBoolForKey:@"offline_mode"]);
     result[@"download_samples"] = SPSavedSamples(finalDown);
     result[@"upload_samples"] = SPSavedSamples(finalUp);
     result[@"completed_at"] = @((long long)(NSDate.date.timeIntervalSince1970 * 1000.0));
@@ -383,6 +398,19 @@ static NSString *SPPasswordHash(NSString *password) {
     self.pendingLocalResult = [result copy];
     self.testStarted = NO;
     [self persist];
+}
+
+- (void)completeOfflineDemo {
+    // These are intentionally modest demo defaults.  User-entered ranges and
+    // identities still pass through the same one-time finalizer.
+    [self completeTestWithMeasuredDownload:100.0
+                                    upload:20.0
+                                      ping:@20
+                                    jitter:@3
+                                packetLoss:@0.0
+                                       isp:@"Offline demo"
+                            serverProvider:@"Local simulation"
+                           serverLocation:@"Offline"];
 }
 
 @end

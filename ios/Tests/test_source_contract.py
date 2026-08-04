@@ -55,6 +55,12 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("insertArrangedSubview:button", provider)
         self.assertNotIn('setTitle:@"S+  i"', provider)
 
+    def test_provider_controls_retry_and_rebind_after_guide(self):
+        self.assertIn("static void SPRetryProviderControls", TWEAK)
+        self.assertIn("SPRetryProviderControls(controller)", TWEAK)
+        self.assertIn("removeTarget:nil action:NULL", TWEAK)
+        self.assertIn("removeGestureRecognizer:oldGesture", TWEAK)
+
     def test_server_selection_is_not_hooked(self):
         self.assertNotIn("didSelectRowAtIndexPath", TWEAK)
 

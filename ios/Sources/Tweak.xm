@@ -203,6 +203,93 @@ static NSString *SPFormatMbps(double value) {
     return [NSString stringWithFormat:@"%.1f", value];
 }
 
+static void SPApplyLastResultIdentityLabels(id controller, NSDictionary *result);
+
+static void SPSetInteger(id object, SEL selector, NSInteger value) {
+    if (object && [object respondsToSelector:selector]) ((void (*)(id, SEL, NSInteger))objc_msgSend)(object, selector, value);
+}
+
+// The private suite has changed its owner object between releases.  Apply the
+// bounded data-saver budget defensively through any config object that exposes
+// the documented native setter names.  If a setter is absent we leave the
+// stock engine untouched rather than risking a verifier or selector crash.
+static void SPApplyDataSaverToObject(id owner) {
+    if (!owner || ![SPState.shared runBoolForKey:@"data_saver_mode"]) return;
+    NSMutableArray *candidates = [NSMutableArray arrayWithObject:owner];
+    for (NSString *key in @[@"suiteConfig", @"configuration", @"testConfiguration", @"config"]) {
+        id value = SPKVCValue(owner, key);
+        if (value && ![candidates containsObject:value]) [candidates addObject:value];
+    }
+    for (id config in candidates) {
+        SPSetInteger(config, NSSelectorFromString(@"setDownloadMaxDurationSeconds:"), 2);
+        SPSetInteger(config, NSSelectorFromString(@"setUploadMaxDurationSeconds:"), 2);
+        SPSetInteger(config, NSSelectorFromString(@"setDownloadMaxBytesPerConnection:"), 262144);
+        SPSetInteger(config, NSSelectorFromString(@"setUploadMaxBytesPerConnection:"), 262144);
+        SPSetInteger(config, NSSelectorFromString(@"setDownloadMinDurationSeconds:"), 1);
+        SPSetInteger(config, NSSelectorFromString(@"setUploadMinDurationSeconds:"), 1);
+    }
+}
+
+static void SPSetOfflineFrame(id controller, SPDirection direction, double value) {
+    NSString *text = SPFormatMbps(value);
+    UILabel *label = SPDisplayLabel(controller, direction == SPDirectionDownload ? @"downloadResult" : @"uploadResult");
+    if (label) label.text = text;
+    // Some builds expose the gauge display directly, while others keep it in
+    // a child object.  Both calls are optional and therefore safe on either.
+    id display = SPObject(controller, NSSelectorFromString(@"speedDisplay"));
+    if (!display) display = SPObject(controller, NSSelectorFromString(@"display"));
+    if (display) SPSetDouble(display, NSSelectorFromString(@"t0:"), value);
+}
+
+static void SPStartOfflineDemo(id controller) {
+    SPState *state = SPState.shared;
+    [state setStage:SPStageDownload];
+    UILabel *download = SPDisplayLabel(controller, @"downloadResult");
+    UILabel *upload = SPDisplayLabel(controller, @"uploadResult");
+    UILabel *ping = SPDisplayLabel(controller, @"pingResult");
+    UILabel *jitter = SPDisplayLabel(controller, @"jitterResult");
+    if (download) download.text = @"0.0";
+    if (upload) upload.text = @"0.0";
+    if (ping) ping.text = @"-";
+    if (jitter) jitter.text = @"-";
+    __weak id weakController = controller;
+    const NSInteger frames = 24;
+    for (NSInteger frame = 0; frame <= frames; frame++) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(frame * 100 * NSEC_PER_MSEC)), dispatch_get_main_queue(), ^{
+            id strongController = weakController;
+            if (!strongController || !state.testActive) return;
+            double progress = (double)frame / (double)frames;
+            if (frame <= 12) {
+                [state setStage:SPStageDownload];
+                double shown = [state displayMbpsForDirection:SPDirectionDownload measuredMbps:100.0 progress:progress];
+                SPSetOfflineFrame(strongController, SPDirectionDownload, shown);
+            } else {
+                [state setStage:SPStageUpload];
+                double uploadProgress = (double)(frame - 12) / (double)(frames - 12);
+                double shown = [state displayMbpsForDirection:SPDirectionUpload measuredMbps:20.0 progress:uploadProgress];
+                SPSetOfflineFrame(strongController, SPDirectionUpload, shown);
+            }
+            if (frame == 12) {
+                NSNumber *demoPing = [state runNumberForKey:@"ping"] ?: @20;
+                NSNumber *demoJitter = [state runNumberForKey:@"jitter"] ?: @3;
+                if (ping) ping.text = demoPing.stringValue;
+                if (jitter) jitter.text = demoJitter.stringValue;
+            }
+            if (frame == frames) {
+                [state completeOfflineDemo];
+                NSDictionary *last = state.lastResult;
+                if (download) download.text = SPFormatMbps([last[@"download_mbps"] doubleValue]);
+                if (upload) upload.text = SPFormatMbps([last[@"upload_mbps"] doubleValue]);
+                if (ping && last[@"ping_ms"] != NSNull.null) ping.text = [last[@"ping_ms"] stringValue];
+                if (jitter && last[@"jitter_ms"] != NSNull.null) jitter.text = [last[@"jitter_ms"] stringValue];
+                SPApplyLastResultIdentityLabels(strongController, last);
+                UILabel *message = SPLabel(strongController, @"userMessageLabel");
+                if (message) message.text = @"Offline demo - local only (not submitted)";
+            }
+        });
+    }
+}
+
 static void SPApplyIdentityLabels(id controller) {
     SPState *state = SPState.shared;
     if (!state.active) return;
@@ -402,6 +489,23 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
         existing = nil;
     }
     if (existing) {
+        // Provider rows can be rebuilt after the first guide is dismissed.
+        // Rebind the action target and long-press recognizer every time so a
+        // retained button never points at a stale presenter.
+        SPActionTarget *target = [SPActionTarget new];
+        target.presenter = presenter;
+        objc_setAssociatedObject(hostController, SPActionTargetKey, target, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [existing removeTarget:nil action:NULL forControlEvents:UIControlEventTouchUpInside];
+        [existing addTarget:target action:@selector(openGuide) forControlEvents:UIControlEventTouchUpInside];
+        if ([ispView isKindOfClass:UIView.class]) {
+            UILongPressGestureRecognizer *oldGesture = objc_getAssociatedObject(ispView, SPProviderGestureKey);
+            if (oldGesture) [ispView removeGestureRecognizer:oldGesture];
+            UILongPressGestureRecognizer *gesture = [[UILongPressGestureRecognizer alloc] initWithTarget:target action:@selector(longPressed:)];
+            gesture.minimumPressDuration = 0.75;
+            gesture.cancelsTouchesInView = NO;
+            [ispView addGestureRecognizer:gesture];
+            objc_setAssociatedObject(ispView, SPProviderGestureKey, gesture, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
         SPApplyProviderLabels(hostController);
         SPRefreshBadge(presenter);
         return;
@@ -508,6 +612,17 @@ static void SPFindProviderControlsInView(UIView *view) {
     }
 
     for (UIView *child in view.subviews) SPFindProviderControlsInView(child);
+}
+
+static void SPRetryProviderControls(UIViewController *controller) {
+    if (![controller isKindOfClass:UIViewController.class]) return;
+    __weak UIViewController *weakController = controller;
+    for (NSNumber *delay in @[@0.0, @0.25, @0.75, @1.5]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            UIViewController *strongController = weakController;
+            if (strongController) SPFindProviderControlsInView(strongController.view);
+        });
+    }
 }
 
 static BOOL SPIsScopedController(UIViewController *controller) {
@@ -622,7 +737,7 @@ static void HookSpeedViewDidLoad(id self, SEL _cmd) {
     OrigSpeedViewDidLoad(self, _cmd);
     UIViewController *controller = self;
     SPAttachControls(controller);
-    SPFindProviderControlsInView(controller.view);
+    SPRetryProviderControls(controller);
     SPApplyThemeToController(controller);
     UIView *ad = SPObject(self, NSSelectorFromString(@"rectangleAdView"));
     ad.hidden = YES;
@@ -636,7 +751,7 @@ static void HookSpeedViewDidAppear(id self, SEL _cmd, BOOL animated) {
     // Provider controls can be assembled lazily after viewDidLoad. Retry once
     // after the screen is on-window so the ISP-row button remains available
     // even when the private host setter is not observed on this app build.
-    dispatch_async(dispatch_get_main_queue(), ^{ SPFindProviderControlsInView(controller.view); });
+    SPRetryProviderControls(controller);
     if (!SPState.shared.introSeen && !controller.presentedViewController) {
         [SPControlsViewController presentGuideFrom:controller allowOpenControls:YES];
     }
@@ -656,6 +771,7 @@ static void (*OrigSuiteStagePrepared)(id, SEL, unsigned char);
 static void HookSuiteStagePrepared(id self, SEL _cmd, unsigned char stage) {
     if (stage == SPStageLatency && !SPState.shared.testActive) [SPState.shared beginTest];
     [SPState.shared setStage:stage];
+    SPApplyDataSaverToObject(self);
     OrigSuiteStagePrepared(self, _cmd, stage);
 }
 
@@ -705,7 +821,15 @@ static void HookSuiteComplete(id self, SEL _cmd) {
 }
 
 static void (*OrigGaugeBegin)(id, SEL, id, id);
-static void HookGaugeBegin(id self, SEL _cmd, id sender, id event) { [SPState.shared beginTest]; OrigGaugeBegin(self, _cmd, sender, event); }
+static void HookGaugeBegin(id self, SEL _cmd, id sender, id event) {
+    [SPState.shared beginTest];
+    if ([SPState.shared runBoolForKey:@"offline_mode"]) {
+        SPStartOfflineDemo(self);
+        return;
+    }
+    SPApplyDataSaverToObject(self);
+    OrigGaugeBegin(self, _cmd, sender, event);
+}
 
 static void (*OrigSetAssemblyStackView)(id, SEL, id);
 static void HookSetAssemblyStackView(id self, SEL _cmd, id stack) {

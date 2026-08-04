@@ -7,6 +7,7 @@ helpers. It provides portable logic and contracts for:
 - generating realistic display samples that finish on one exact saved value;
 - explicit, revocable analytics consent;
 - privacy-preserving usage-event and bug-report contracts;
+- offline demo and bounded data-saver test modes;
 - custom theme codes with integrity checks;
 - a signed-update manifest contract; and
 - Android integration and a review-ready iOS extension source tree.
@@ -57,6 +58,9 @@ python3 Scripts/verify_objc_syntax.py
 - `examples/` - safe payload examples.
 - `tests/` - behavioral and public-tree tests.
 - `docs/` - architecture, privacy, and integration guidance.
+
+See [`docs/OFFLINE_AND_DATA_SAVER.md`](docs/OFFLINE_AND_DATA_SAVER.md) for the
+user-facing behavior, traffic limits, and platform adapter boundaries.
 
 ## Scope and safety
 
