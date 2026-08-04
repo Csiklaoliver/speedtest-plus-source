@@ -12,6 +12,7 @@ SpeedtestPlus_FILES = \
 	Sources/SPTheme.m \
 	Sources/SPControlsViewController.m \
 	Sources/SPDiagnostics.m \
+	Sources/SPMotion.m \
 	Sources/SPShareBuilder.m \
 	Sources/SPUpdater.m
 SpeedtestPlus_CFLAGS = -fobjc-arc -Wall -Wextra -Wno-unused-parameter

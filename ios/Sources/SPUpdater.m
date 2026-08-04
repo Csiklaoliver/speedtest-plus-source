@@ -21,7 +21,17 @@ static BOOL SPIsNativeSetupController(UIViewController *controller) {
 // frozen.  Treat every non-dismissing modal as a blocking presentation; this
 // also avoids interrupting a user's unrelated native dialog.
 static BOOL SPHasBlockingPresentation(UIViewController *controller) {
-    UIViewController *cursor = controller;
+    // Check the exact controller first.  A setup sheet can be presented by a
+    // child inside a navigation controller without appearing as the
+    // navigation controller's own `presentedViewController`.
+    for (UIViewController *direct = controller; direct; direct = direct.presentingViewController) {
+        if ((direct.presentedViewController && !direct.presentedViewController.isBeingDismissed) ||
+            SPIsNativeSetupController(direct) || [direct isKindOfClass:UIAlertController.class]) return YES;
+    }
+    UIViewController *cursor = controller.navigationController ?: controller.tabBarController ?: controller;
+    while (cursor.presentingViewController && !cursor.presentingViewController.isBeingDismissed) {
+        cursor = cursor.presentingViewController;
+    }
     while (cursor) {
         UIViewController *presented = cursor.presentedViewController;
         if (presented && !presented.isBeingDismissed) return YES;
@@ -36,6 +46,12 @@ static BOOL SPHasBlockingPresentation(UIViewController *controller) {
 
 static UIViewController *SPUpdatePresenter(UIViewController *preferred) {
     UIViewController *controller = preferred;
+    if ([controller isKindOfClass:UIViewController.class]) {
+        controller = controller.navigationController ?: controller.tabBarController ?: controller;
+        while (controller.presentingViewController && !controller.presentingViewController.isBeingDismissed) {
+            controller = controller.presentingViewController;
+        }
+    }
     if (!controller) {
         UIWindow *window = nil;
         if (@available(iOS 13.0, *)) {

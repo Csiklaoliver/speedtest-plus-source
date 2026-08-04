@@ -1,4 +1,6 @@
 #import "SPState.h"
+#import "SPMotion.h"
+#import <UIKit/UIKit.h>
 #import <Security/Security.h>
 #import <CommonCrypto/CommonDigest.h>
 #import <math.h>
@@ -133,6 +135,9 @@ static NSDictionary<NSString *, id> *SPNormalizedConfiguration(id value) {
 - (BOOL)introSeen { return [self.store[@"intro_version_seen"] integerValue] >= 1; }
 - (BOOL)panelHidden { return [self.store[@"panel_hidden"] boolValue]; }
 - (BOOL)updateChecksEnabled { return self.store[@"update_checks"] ? [self.store[@"update_checks"] boolValue] : YES; }
+- (BOOL)reduceMotionEnabled {
+    return [self.store[@"reduce_motion"] boolValue] || UIAccessibilityIsReduceMotionEnabled();
+}
 - (NSString *)lastPromptedUpdateVersion { id value = self.store[@"last_prompted_update_version"]; return [value isKindOfClass:NSString.class] ? value : nil; }
 - (NSInteger)stage { return self.currentStage; }
 - (BOOL)isTestActive { return self.testStarted; }
@@ -207,6 +212,11 @@ static NSString *SPPasswordHash(NSString *password) {
 }
 
 - (void)setUpdateChecksEnabled:(BOOL)enabled { self.store[@"update_checks"] = @(enabled); [self persist]; }
+- (void)setReduceMotionEnabled:(BOOL)enabled {
+    self.store[@"reduce_motion"] = @(enabled);
+    [self persist];
+    [[NSNotificationCenter defaultCenter] postNotificationName:SPStateDidChangeNotification object:self];
+}
 - (void)setLastPromptedUpdateVersion:(NSString *)version { if (version.length) self.store[@"last_prompted_update_version"] = version; [self persist]; }
 
 - (NSDictionary<NSString *,id> *)profileAtIndex:(NSInteger)index {
@@ -353,14 +363,17 @@ static NSString *SPPasswordHash(NSString *password) {
         else self.uploadAnimationStartedAt = now;
     }
     NSTimeInterval elapsed = MAX(0.0, now - started);
+    double suppliedProgress = isfinite(progress) ? MIN(1.0, MAX(0.0, progress)) : 0.0;
+    BOOL reduceMotion = self.reduceMotionEnabled;
     double elapsedProgress;
-    if (elapsed < 5.0) {
+    if (reduceMotion) {
+        elapsedProgress = SPMotionPresentationProgress(suppliedProgress, elapsed, YES);
+    } else if (elapsed < 5.0) {
         elapsedProgress = (elapsed / 5.0) * 0.96;
     } else {
         double oscillation = 0.5 + 0.5 * sin((elapsed - 5.0) * 2.35 + (double)direction);
         elapsedProgress = 0.90 + oscillation * 0.07;
     }
-    double suppliedProgress = isfinite(progress) ? MIN(1.0, MAX(0.0, progress)) : 0.0;
     double curveProgress = MAX(suppliedProgress, elapsedProgress);
     return SPRealisticMbps(target, curveProgress, self.testSeed + (uint64_t)floor(elapsed * 4.0), direction);
 }

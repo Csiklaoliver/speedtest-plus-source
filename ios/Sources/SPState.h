@@ -16,6 +16,8 @@ FOUNDATION_EXPORT NSString * const SPThemeDidChangeNotification;
 @property(nonatomic, readonly) BOOL introSeen;
 @property(nonatomic, readonly) BOOL panelHidden;
 @property(nonatomic, readonly) BOOL updateChecksEnabled;
+/// User preference OR the device's system Reduce Motion accessibility setting.
+@property(nonatomic, readonly) BOOL reduceMotionEnabled;
 @property(nonatomic, readonly, getter=isTestActive) BOOL testActive;
 @property(nonatomic, readonly, nullable) NSString *lastPromptedUpdateVersion;
 
@@ -28,6 +30,7 @@ FOUNDATION_EXPORT NSString * const SPThemeDidChangeNotification;
 - (void)setPanelHidden:(BOOL)hidden password:(nullable NSString *)password;
 - (BOOL)unlockWithPassword:(NSString *)password;
 - (void)setUpdateChecksEnabled:(BOOL)enabled;
+- (void)setReduceMotionEnabled:(BOOL)enabled;
 - (void)setLastPromptedUpdateVersion:(NSString *)version;
 
 - (nullable NSDictionary<NSString *, id> *)profileAtIndex:(NSInteger)index;

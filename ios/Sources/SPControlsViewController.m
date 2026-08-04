@@ -12,6 +12,7 @@
 @property(nonatomic) UIButton *themeButton;
 @property(nonatomic) UISwitch *offlineSwitch;
 @property(nonatomic) UISwitch *dataSaverSwitch;
+@property(nonatomic) UISwitch *reduceMotionSwitch;
 @end
 
 @implementation SPControlsViewController
@@ -164,6 +165,17 @@
     [self.dataSaverSwitch addTarget:self action:@selector(dataSaverSwitchChanged:) forControlEvents:UIControlEventValueChanged];
     [self addSwitchRow:@"Offline demo (no network)" control:self.offlineSwitch];
     [self addSwitchRow:@"Data saver (bounded real test)" control:self.dataSaverSwitch];
+
+    [self addSection:@"Accessibility"];
+    UILabel *motionNote = [self label:@"Reduce motion removes gauge transitions and settling pulses. It never changes measured or finalized results. The device's system Reduce Motion setting is also respected."];
+    motionNote.font = [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
+    motionNote.textColor = [UIColor colorWithWhite:1 alpha:0.70];
+    [self.stack addArrangedSubview:motionNote];
+    self.reduceMotionSwitch = [UISwitch new];
+    self.reduceMotionSwitch.on = SPState.shared.reduceMotionEnabled;
+    self.reduceMotionSwitch.accessibilityLabel = @"Reduce gauge motion";
+    [self.reduceMotionSwitch addTarget:self action:@selector(reduceMotionSwitchChanged:) forControlEvents:UIControlEventValueChanged];
+    [self addSwitchRow:@"Reduce gauge motion" control:self.reduceMotionSwitch];
 
     [self addSection:@"Provider and server"];
     [self addField:@"ISP name" key:@"isp" keyboard:UIKeyboardTypeDefault];
@@ -421,6 +433,10 @@
 
 - (void)dataSaverSwitchChanged:(UISwitch *)sender {
     if (sender.isOn) self.offlineSwitch.on = NO;
+}
+
+- (void)reduceMotionSwitchChanged:(UISwitch *)sender {
+    [SPState.shared setReduceMotionEnabled:sender.isOn];
 }
 
 - (void)chooseTheme {

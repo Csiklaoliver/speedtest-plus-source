@@ -10,6 +10,7 @@ helpers. It provides portable logic and contracts for:
 - offline demo and bounded data-saver test modes;
 - custom theme codes with integrity checks;
 - one-tap, privacy-safe diagnostics snapshots for support;
+- reduced-motion accessibility controls that preserve exact results;
 - a signed-update manifest contract; and
 - Android integration and a review-ready iOS extension source tree.
 
@@ -63,6 +64,9 @@ python3 Scripts/verify_objc_syntax.py
 
 See [`docs/OFFLINE_AND_DATA_SAVER.md`](docs/OFFLINE_AND_DATA_SAVER.md) for the
 user-facing behavior, traffic limits, and platform adapter boundaries.
+
+See [`docs/REDUCED_MOTION.md`](docs/REDUCED_MOTION.md) for the accessibility
+setting and Android/iOS integration contract.
 
 The Android 1.8.9 report-to-fix mapping and verification limits are recorded in
 [`docs/ANDROID_1.8.9_BUGFIXES.md`](docs/ANDROID_1.8.9_BUGFIXES.md).

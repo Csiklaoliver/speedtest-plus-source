@@ -1,6 +1,7 @@
 import tech.oliverprojects.speedtestplus.core.ConfigValidator;
 import tech.oliverprojects.speedtestplus.core.DiagnosticsSnapshot;
 import tech.oliverprojects.speedtestplus.core.FinalResult;
+import tech.oliverprojects.speedtestplus.core.MotionPolicy;
 import tech.oliverprojects.speedtestplus.core.ResultFinalizer;
 import tech.oliverprojects.speedtestplus.core.SpeedCurve;
 import tech.oliverprojects.speedtestplus.core.SpeedPlusConfig;
@@ -17,6 +18,7 @@ public final class CoreContractTest {
         themeCodesRoundTripAndRejectCorruption();
         testModesAreSafeAndPortable();
         diagnosticsSnapshotIsPrivacySafe();
+        reducedMotionIsPresentationOnly();
         System.out.println("CoreContractTest: PASS");
     }
 
@@ -122,6 +124,24 @@ public final class CoreContractTest {
         require(!text.contains("Private ISP"), "diagnostics must not include free-text identity");
         require(!text.contains("16\nsecret"), "diagnostics must remove line breaks from system text");
         require(text.contains("no IP address"), "diagnostics must explain privacy scope");
+    }
+
+    private static void reducedMotionIsPresentationOnly() {
+        require(MotionPolicy.PREFERENCE_KEY.equals("reduce_motion"),
+                "reduced-motion preference key must remain stable");
+        require(MotionPolicy.clampProgress(Double.NaN) == 0.0d,
+                "invalid progress must fail closed");
+        require(MotionPolicy.clampProgress(2.0d) == 1.0d,
+                "progress must be capped at one");
+        double early = MotionPolicy.presentationProgress(0.0d, 2.0d, true);
+        double later = MotionPolicy.presentationProgress(0.0d, 6.0d, true);
+        require(later > early, "reduced-motion presentation should still move");
+        require(MotionPolicy.presentationProgress(0.8d, 0.0d, true) == 0.8d,
+                "supplied progress must not move backwards");
+        require(MotionPolicy.transitionDurationMillis(300L, true) == 0L,
+                "reduced motion must remove transition animation");
+        require(MotionPolicy.transitionDurationMillis(300L, false) == 300L,
+                "normal transition duration must be preserved");
     }
 
     private static void require(boolean condition, String message) {
