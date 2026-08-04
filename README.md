@@ -9,6 +9,7 @@ helpers. It provides portable logic and contracts for:
 - privacy-preserving usage-event and bug-report contracts;
 - offline demo and bounded data-saver test modes;
 - custom theme codes with integrity checks;
+- one-tap, privacy-safe diagnostics snapshots for support;
 - a signed-update manifest contract; and
 - Android integration and a review-ready iOS extension source tree.
 
@@ -51,6 +52,7 @@ python3 Scripts/verify_objc_syntax.py
 ## Layout
 
 - `src/main/java/` - original, platform-neutral Java helpers.
+- `android/` - Android controls adapter and diagnostics integration contract.
 - `ios/` - independently written iOS tweak source, runtime inspection tools,
   build instructions, and reviewer checklist.
 - `schemas/` - JSON Schema contracts for app/server boundaries.

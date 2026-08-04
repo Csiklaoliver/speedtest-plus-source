@@ -1,4 +1,5 @@
 import tech.oliverprojects.speedtestplus.core.ConfigValidator;
+import tech.oliverprojects.speedtestplus.core.DiagnosticsSnapshot;
 import tech.oliverprojects.speedtestplus.core.FinalResult;
 import tech.oliverprojects.speedtestplus.core.ResultFinalizer;
 import tech.oliverprojects.speedtestplus.core.SpeedCurve;
@@ -15,6 +16,7 @@ public final class CoreContractTest {
         telemetryIsOptIn();
         themeCodesRoundTripAndRejectCorruption();
         testModesAreSafeAndPortable();
+        diagnosticsSnapshotIsPrivacySafe();
         System.out.println("CoreContractTest: PASS");
     }
 
@@ -105,6 +107,21 @@ public final class CoreContractTest {
         require("Offline demo".equals(demo.isp), "offline identity must be explicit");
         require(!TestMode.allowsRemoteSubmission(validated.config()),
                 "offline result must not be remotely submitted");
+    }
+
+    private static void diagnosticsSnapshotIsPrivacySafe() {
+        java.util.Map<String, Object> config = new java.util.HashMap<>();
+        config.put("download_min", 100.0d);
+        config.put("isp", "Private ISP");
+        java.util.Map<String, Object> result = new java.util.HashMap<>();
+        result.put("download_mbps", 274.04d);
+        result.put("ping_ms", 15);
+        String text = DiagnosticsSnapshot.build("Android", "16\nsecret", "1.8.9", config, result, true, 2, 3, false);
+        require(text.contains("Download: 274.0 Mbps"), "diagnostics must include finalized scalar");
+        require(text.contains("ISP override: set"), "diagnostics must report override presence");
+        require(!text.contains("Private ISP"), "diagnostics must not include free-text identity");
+        require(!text.contains("16\nsecret"), "diagnostics must remove line breaks from system text");
+        require(text.contains("no IP address"), "diagnostics must explain privacy scope");
     }
 
     private static void require(boolean condition, String message) {

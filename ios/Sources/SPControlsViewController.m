@@ -1,6 +1,7 @@
 #import "SPControlsViewController.h"
 #import "SPState.h"
 #import "SPTheme.h"
+#import "SPDiagnostics.h"
 #import <math.h>
 #import <limits.h>
 
@@ -174,6 +175,9 @@
     [self.stack addArrangedSubview:self.themeButton];
 
     [self addSection:@"Panel and updates"];
+    UIButton *diagnostics = [self button:@"Copy diagnostics" action:@selector(copyDiagnostics)];
+    diagnostics.accessibilityLabel = @"Copy privacy-safe diagnostics";
+    [self.stack addArrangedSubview:diagnostics];
     UIButton *lock = [self button:@"Hide or password protect controls" action:@selector(configureLock)];
     [self.stack addArrangedSubview:lock];
     UIStackView *links = [self horizontalStack];
@@ -200,6 +204,12 @@
     [self fillFromConfiguration:SPState.shared.configuration];
     [SPTheme applyTheme:theme toView:self.view];
     [SPTheme applyFunctionalMaterialToView:self.view theme:theme];
+}
+
+- (void)copyDiagnostics {
+    [self dismissKeyboard];
+    UIPasteboard.generalPasteboard.string = SPDiagnosticsText(SPState.shared);
+    [self showMessage:@"Diagnostics copied. It contains no IP address, account, device ID, exact location, credentials, or identity text."];
 }
 
 - (UILabel *)label:(NSString *)text {
