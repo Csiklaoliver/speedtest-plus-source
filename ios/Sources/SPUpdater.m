@@ -1,7 +1,9 @@
 #import "SPUpdater.h"
 #import "SPState.h"
 
-static NSString * const SPManifestURL = @"https://speedtest.oliverprojects.tech/api/ota/manifest";
+// Keep the updater on the canonical public manifest path.  The custom domain
+// hosts the project site/API but does not expose this JSON route.
+static NSString * const SPManifestURL = @"https://raw.githubusercontent.com/Csiklaoliver/speedtest-plus-docs/main/ota/manifest.json";
 // Keep this in sync with the IPA's CFBundleShortVersionString.  A stale
 // value here makes every current install report its own release as an update.
 static NSString * const SPCurrentVersion = @"0.1.16";
@@ -114,11 +116,30 @@ static void SPShowUpdateWhenReady(NSString *version, NSURL *downloadURL, UIViewC
     if (![SPState shared].updateChecksEnabled) return;
     NSURL *url = [NSURL URLWithString:SPManifestURL];
     if (!url) return;
-    NSURLSessionDataTask *task = [NSURLSession.sharedSession dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+    // A silent checker must never hold the main screen on a captive network or
+    // retain shared cookies/cache.  Keep this request bounded and ephemeral.
+    NSURLSessionConfiguration *configuration = [NSURLSessionConfiguration ephemeralSessionConfiguration];
+    configuration.timeoutIntervalForRequest = 5.0;
+    configuration.timeoutIntervalForResource = 8.0;
+    configuration.HTTPShouldSetCookies = NO;
+    configuration.URLCache = nil;
+    configuration.HTTPCookieStorage = nil;
+    configuration.requestCachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+    request.HTTPMethod = @"GET";
+    request.timeoutInterval = 5.0;
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:configuration];
+    NSURLSessionDataTask *task = [session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         NSHTTPURLResponse *http = [response isKindOfClass:NSHTTPURLResponse.class] ? (NSHTTPURLResponse *)response : nil;
-        if (!data || error || http.statusCode != 200 || data.length > 256 * 1024) return;
+        if (!data || error || http.statusCode != 200 || data.length > 256 * 1024) {
+            [session finishTasksAndInvalidate];
+            return;
+        }
         id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-        if (![json isKindOfClass:NSDictionary.class]) return;
+        if (![json isKindOfClass:NSDictionary.class]) {
+            [session finishTasksAndInvalidate];
+            return;
+        }
         NSDictionary *root = json;
         NSDictionary *ios = [root[@"ios"] isKindOfClass:NSDictionary.class] ? root[@"ios"] : nil;
         NSString *version = [ios[@"version"] isKindOfClass:NSString.class] ? ios[@"version"] : nil;
@@ -126,12 +147,25 @@ static void SPShowUpdateWhenReady(NSString *version, NSURL *downloadURL, UIViewC
         NSString *sha256 = [ios[@"sha256"] isKindOfClass:NSString.class] ? [ios[@"sha256"] lowercaseString] : nil;
         NSNumber *size = [ios[@"size_bytes"] isKindOfClass:NSNumber.class] ? ios[@"size_bytes"] : nil;
         NSCharacterSet *nonHex = [NSCharacterSet characterSetWithCharactersInString:@"0123456789abcdef"].invertedSet;
-        if (!version.length || !download.length || sha256.length != 64 || [sha256 rangeOfCharacterFromSet:nonHex].location != NSNotFound || size.longLongValue <= 0) return;
-        if ([SPCurrentVersion compare:version options:NSNumericSearch] != NSOrderedAscending) return;
-        if ([SPState.shared.lastPromptedUpdateVersion isEqualToString:version]) return;
+        if (!version.length || !download.length || sha256.length != 64 || [sha256 rangeOfCharacterFromSet:nonHex].location != NSNotFound || size.longLongValue <= 0) {
+            [session finishTasksAndInvalidate];
+            return;
+        }
+        if ([SPCurrentVersion compare:version options:NSNumericSearch] != NSOrderedAscending) {
+            [session finishTasksAndInvalidate];
+            return;
+        }
+        if ([SPState.shared.lastPromptedUpdateVersion isEqualToString:version]) {
+            [session finishTasksAndInvalidate];
+            return;
+        }
         NSURL *downloadURL = [NSURL URLWithString:download];
-        if (![downloadURL.scheme.lowercaseString isEqualToString:@"https"] || !downloadURL.host.length) return;
+        if (![downloadURL.scheme.lowercaseString isEqualToString:@"https"] || !downloadURL.host.length) {
+            [session finishTasksAndInvalidate];
+            return;
+        }
         SPShowUpdateWhenReady(version, downloadURL, viewController, 0);
+        [session finishTasksAndInvalidate];
     }];
     [task resume];
 }

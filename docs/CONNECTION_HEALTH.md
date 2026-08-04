@@ -7,14 +7,15 @@ server-list and setup reports without starting a speed test.
 
 - In **Offline demo**, no network request is made. The result says that
   internet/DNS/TLS was not checked and server-list readiness is not applicable.
-- In normal mode, the check sends one `HEAD` request to the official
-Speedtest+ HTTPS manifest endpoint. The request timeout is 4 seconds and the
-  total resource timeout is 5 seconds. It never downloads a test
-  payload, measures bandwidth, or starts a speed test.
-- An HTTP response in the normal 100–599 range means the transport reached the
-  endpoint, even when the endpoint rejects `HEAD` with a status such as 405.
-  DNS, TLS, timeout, and connection failures are shown as short fixed status
-  messages instead of raw error text.
+- In normal mode, the check sends one `HEAD` request to the public
+  `raw.githubusercontent.com/Csiklaoliver/speedtest-plus-docs/main/ota/manifest.json`
+  manifest endpoint. The request timeout is 4 seconds and the total resource
+  timeout is 5 seconds. It never downloads a test payload, measures bandwidth,
+  or starts a speed test.
+- A 2xx or 3xx HTTP response is reported as **Passed**. A 4xx or 5xx response
+  is reported as **Server reachable; request rejected** so an endpoint error
+  is not mistaken for a successful check. DNS, TLS, timeout, and connection
+  failures are shown as short fixed status messages instead of raw error text.
 
 ## Server-list readiness
 

@@ -20,7 +20,9 @@ class ConnectionHealthContractTests(unittest.TestCase):
         self.assertIn("timeoutIntervalForRequest = 4.0", HEALTH)
         self.assertIn("timeoutIntervalForResource = 5.0", HEALTH)
         self.assertIn('request.HTTPMethod = @"HEAD"', HEALTH)
-        self.assertIn("speedtest.oliverprojects.tech/api/ota/manifest", HEALTH)
+        self.assertIn("raw.githubusercontent.com/Csiklaoliver/speedtest-plus-docs/main/ota/manifest.json", HEALTH)
+        self.assertIn("SPHTTPTransportSummary", HEALTH)
+        self.assertIn("Server reachable; request rejected", HEALTH)
 
     def test_states_are_user_readable_and_fixed(self):
         for text in (
@@ -64,6 +66,15 @@ class ConnectionHealthContractTests(unittest.TestCase):
         self.assertIn("runWithOfflineMode:offline", CONTROLS)
         self.assertIn("privacy-safe connection health", CONTROLS)
 
+    def test_updater_uses_canonical_manifest_and_bounded_ephemeral_session(self):
+        updater = (ROOT / "Sources" / "SPUpdater.m").read_text(encoding="utf-8")
+        self.assertIn("raw.githubusercontent.com/Csiklaoliver/speedtest-plus-docs/main/ota/manifest.json", updater)
+        self.assertIn("ephemeralSessionConfiguration", updater)
+        self.assertIn("timeoutIntervalForRequest = 5.0", updater)
+        self.assertIn("timeoutIntervalForResource = 8.0", updater)
+        self.assertIn("HTTPShouldSetCookies = NO", updater)
+        self.assertIn("URLCache = nil", updater)
+
     def test_documentation_sets_correct_expectations(self):
         for text in (
             "Offline demo",
@@ -75,6 +86,8 @@ class ConnectionHealthContractTests(unittest.TestCase):
             "native server selection",
             "identifiers",
             "cookies",
+            "raw.githubusercontent.com/Csiklaoliver/speedtest-plus-docs/main/ota/manifest.json",
+            "request rejected",
         ):
             self.assertIn(text, DOCS)
 

@@ -1,6 +1,9 @@
 #import "SPConnectionHealth.h"
 
-static NSString * const SPConnectionHealthURLString = @"https://speedtest.oliverprojects.tech/api/ota/manifest";
+// Use the same public manifest that the release documentation publishes.  The
+// custom domain may serve the website/API but is not the canonical OTA path;
+// probing it made a healthy connection look like an HTTP 404 failure.
+static NSString * const SPConnectionHealthURLString = @"https://raw.githubusercontent.com/Csiklaoliver/speedtest-plus-docs/main/ota/manifest.json";
 
 static BOOL SPNativeServerListReady = NO;
 
@@ -29,6 +32,18 @@ static NSString *SPFailureSummary(NSError *error) {
         default:
             return @"Network check failed";
     }
+}
+
+static NSString *SPHTTPTransportSummary(NSInteger statusCode) {
+    if (statusCode >= 200 && statusCode <= 399) {
+        return [NSString stringWithFormat:@"Passed (HTTP %ld)", (long)statusCode];
+    }
+    if (statusCode >= 400 && statusCode <= 599) {
+        // A response proves DNS, TLS, and the network path worked, but the
+        // request itself was rejected.  Do not label a 404/405 as "Passed".
+        return [NSString stringWithFormat:@"Server reachable; request rejected (HTTP %ld)", (long)statusCode];
+    }
+    return @"Network check failed";
 }
 
 static NSString *SPSummary(NSString *transport, NSString *readiness) {
@@ -85,8 +100,8 @@ static void SPComplete(void (^completion)(NSString *summary), NSString *summary)
         NSString *transport;
         if (error) {
             transport = SPFailureSummary(error);
-        } else if (http && http.statusCode >= 100 && http.statusCode <= 599) {
-            transport = [NSString stringWithFormat:@"Passed (HTTP %ld)", (long)http.statusCode];
+        } else if (http) {
+            transport = SPHTTPTransportSummary(http.statusCode);
         } else {
             transport = @"Network check failed";
         }
