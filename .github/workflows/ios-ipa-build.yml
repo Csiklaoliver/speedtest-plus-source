@@ -44,7 +44,7 @@ jobs:
         run: |
           python3 -m venv "$RUNNER_TEMP/speedtestplus-venv"
           "$RUNNER_TEMP/speedtestplus-venv/bin/python" -m pip install --disable-pip-version-check lief
-            "$RUNNER_TEMP/speedtestplus-venv/bin/python" Scripts/build_unsigned_ipa.py \
+          "$RUNNER_TEMP/speedtestplus-venv/bin/python" Scripts/build_unsigned_ipa.py \
             --input "$RUNNER_TEMP/SpeedtestPlus-base.ipa" \
             --dylib "${{ steps.dylib.outputs.path }}" \
             --output "$RUNNER_TEMP/SpeedtestPlus-iOS-0.1.11-live-label-fallback-unsigned.ipa"

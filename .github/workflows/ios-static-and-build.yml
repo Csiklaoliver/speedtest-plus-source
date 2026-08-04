@@ -35,6 +35,8 @@ jobs:
     defaults:
       run:
         working-directory: ios
+    env:
+      THEOS: ${{ github.workspace }}/.theos-ci
     steps:
       - uses: actions/checkout@v4
       - name: Install build requirements
@@ -42,8 +44,6 @@ jobs:
       - name: Install Theos
         run: git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
       - name: Compile unsigned package
-        env:
-          THEOS: ${{ github.workspace }}/.theos-ci
         run: make package FINALPACKAGE=1
       - name: Upload unsigned tweak artifact
         uses: actions/upload-artifact@v4
