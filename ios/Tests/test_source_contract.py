@@ -154,6 +154,18 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("MAX(suppliedProgress, elapsedProgress)", display)
         self.assertNotIn("measured <= 0.0", display)
 
+    def test_live_label_fallback_covers_callback_gaps(self):
+        self.assertIn("SPScheduleLiveLabelFallback", TWEAK)
+        fallback = TWEAK[TWEAK.index("static void SPScheduleLiveLabelFallback"):
+                         TWEAK.index("static void SPApplyIdentityLabels")]
+        self.assertIn("state.testActive", fallback)
+        self.assertIn("runHasSpeedOverrideForDirection", fallback)
+        self.assertIn("displayMbpsForDirection", fallback)
+        self.assertIn("dispatch_after", fallback)
+        stage = TWEAK[TWEAK.index("static void HookSuiteStagePrepared"):
+                      TWEAK.index("static void (*OrigHandleProgress)")]
+        self.assertIn("SPScheduleLiveLabelFallback(self, direction)", stage)
+
     def test_theme_repaints_generic_core_surfaces(self):
         self.assertIn('containsString:@"Speed"', THEME)
         self.assertIn('containsString:@"Compare"', THEME)

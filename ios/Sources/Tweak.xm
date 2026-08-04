@@ -295,6 +295,34 @@ static void SPStartOfflineDemo(id controller) {
     }
 }
 
+// A few 7.x builds can deliver transfer callbacks before the visible result
+// label has been laid out, or briefly stop delivering callbacks while the
+// socket is warming up.  In that window the stock label can remain at a small
+// measured value (the reported "6 Mbps cap") even though the custom target is
+// already finalized.  Keep a short, guarded label-only fallback in parallel
+// with the native callbacks.  It never touches the native transfer model or
+// server selection, and it stops as soon as the stage changes or the test
+// completes.
+static void SPScheduleLiveLabelFallback(id controller, SPDirection direction) {
+    SPState *state = SPState.shared;
+    if (!controller || !state.testActive || ![state runHasSpeedOverrideForDirection:direction]) return;
+    NSInteger expectedStage = direction == SPDirectionDownload ? SPStageDownload : SPStageUpload;
+    __weak id weakController = controller;
+    for (NSInteger frame = 0; frame < 160; frame++) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(frame * 100 * NSEC_PER_MSEC)), dispatch_get_main_queue(), ^{
+            id strongController = weakController;
+            if (!strongController || !state.testActive || state.stage != expectedStage ||
+                ![state runHasSpeedOverrideForDirection:direction]) return;
+            NSString *getter = direction == SPDirectionDownload ? @"downloadResult" : @"uploadResult";
+            UILabel *label = SPDisplayLabel(strongController, getter);
+            if (!label) return;
+            double measured = SPNumberFromLabel(label);
+            double shown = [state displayMbpsForDirection:direction measuredMbps:measured progress:0.0];
+            if (isfinite(shown) && shown >= 0.0) label.text = SPFormatMbps(shown);
+        });
+    }
+}
+
 static void SPApplyIdentityLabels(id controller) {
     SPState *state = SPState.shared;
     if (!state.active) return;
@@ -875,6 +903,10 @@ static void HookSuiteStagePrepared(id self, SEL _cmd, unsigned char stage) {
     [SPState.shared setStage:stage];
     SPApplyDataSaverToObject(self);
     OrigSuiteStagePrepared(self, _cmd, stage);
+    if (stage == SPStageDownload || stage == SPStageUpload) {
+        SPDirection direction = stage == SPStageDownload ? SPDirectionDownload : SPDirectionUpload;
+        SPScheduleLiveLabelFallback(self, direction);
+    }
 }
 
 static void (*OrigHandleProgress)(id, SEL, id);
