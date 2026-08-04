@@ -11,6 +11,7 @@ THEME = (ROOT / "Sources" / "SPTheme.m").read_text(encoding="utf-8")
 SHARE = (ROOT / "Sources" / "SPShareBuilder.m").read_text(encoding="utf-8")
 CONTROLS = (ROOT / "Sources" / "SPControlsViewController.m").read_text(encoding="utf-8")
 STATE = (ROOT / "Sources" / "SPState.m").read_text(encoding="utf-8")
+DIAGNOSTICS = (ROOT / "Sources" / "SPDiagnostics.m").read_text(encoding="utf-8")
 
 
 class SourceContractTests(unittest.TestCase):
@@ -119,6 +120,19 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("reparent stale controls", layout)
         self.assertNotIn("[controller.view viewWithTag:SPButtonTag]) return", layout)
 
+    def test_public_hierarchy_fallback_repairs_missing_provider_entry_point(self):
+        provider = TWEAK[TWEAK.index("static BOOL SPFallbackLabelIsUsable"):
+                         TWEAK.index("static void SPRemoveLegacyFloatingControls")]
+        self.assertIn("SPFallbackProviderLabel", provider)
+        self.assertIn("SPFallbackLabelIsInNonProviderSurface", provider)
+        self.assertIn('excluded in @[@"feedback"', provider)
+        self.assertIn("SPInstallFallbackProviderButton", provider)
+        self.assertIn('accessibilityIdentifier = @"speedtest_plus_provider_info_fallback"', provider)
+        self.assertIn("SPInstallProviderHotspot(presenter, row, ispLabel, target)", provider)
+        self.assertIn("button.alpha = 1.0", provider)
+        self.assertIn("SPAttachFallbackProviderControls(strongController)", TWEAK)
+        self.assertIn("@2.5", TWEAK)
+
     def test_server_selection_is_not_hooked(self):
         self.assertNotIn("didSelectRowAtIndexPath", TWEAK)
 
@@ -178,6 +192,14 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('containsString:@"Compare"', THEME)
         self.assertIn("CGColorGetAlpha(view.backgroundColor.CGColor) > 0.05", THEME)
         self.assertIn("SPThemeDidChangeNotification", TWEAK)
+
+    def test_privacy_safe_diagnostics_is_available_in_controls(self):
+        self.assertIn('button:@"Copy diagnostics" action:@selector(copyDiagnostics)', CONTROLS)
+        self.assertIn("UIPasteboard.generalPasteboard.string = SPDiagnosticsText", CONTROLS)
+        self.assertIn("no IP address", CONTROLS)
+        self.assertIn("no IP address", DIAGNOSTICS)
+        self.assertIn("identity text", DIAGNOSTICS)
+        self.assertIn("Active overrides", DIAGNOSTICS)
 
 
 if __name__ == "__main__":
