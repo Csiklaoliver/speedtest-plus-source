@@ -53,7 +53,7 @@ class ConnectionHealthContractTests(unittest.TestCase):
             "didSelectRowAtIndexPath",
         ):
             self.assertNotIn(forbidden, HEALTH)
-        self.assertIn("HTTPShouldHandleCookies = NO", HEALTH)
+        self.assertIn("HTTPShouldSetCookies = NO", HEALTH)
         self.assertIn("HTTPCookieStorage = nil", HEALTH)
         self.assertIn("URLCache = nil", HEALTH)
         self.assertIn("requestCachePolicy = NSURLRequestReloadIgnoringLocalCacheData", HEALTH)
