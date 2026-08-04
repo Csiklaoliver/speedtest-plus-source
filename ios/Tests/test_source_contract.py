@@ -106,6 +106,12 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("![ispLabel isKindOfClass:UILabel.class]", provider)
         self.assertIn("button.trailingAnchor constraintEqualToAnchor:ispView.trailingAnchor", provider)
 
+    def test_provider_button_is_repaired_after_row_rebuild(self):
+        layout = TWEAK[TWEAK.index("static void SPAttachProviderControlsAfterLayout"):TWEAK.index("static BOOL SPIsScopedController")]
+        self.assertIn("SPFindProviderControlsInView(controller.view)", layout)
+        self.assertIn("reparent stale controls", layout)
+        self.assertNotIn("[controller.view viewWithTag:SPButtonTag]) return", layout)
+
     def test_server_selection_is_not_hooked(self):
         self.assertNotIn("didSelectRowAtIndexPath", TWEAK)
 

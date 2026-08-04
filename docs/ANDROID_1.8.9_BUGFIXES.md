@@ -27,6 +27,9 @@ a legally supplied base package.
 - The same live value is sent to both the number display and the native gauge
   mapper, so the blue leading arc, gray trailing bar, and needle stay together.
   The visible gauge scale remains fixed at 1k.
+- The synthetic animator now waits 900 ms before its first frame.  That is the
+  native `ookla_speedtest_gauge_in` duration, so the original opening sequence
+  completes before a custom number or needle update is drawn.
 - The first frame uses a small positive fraction of the target instead of a
   zero frame, which avoids the reported stuck-at-zero screen while the native
   engine is quiet.
@@ -42,7 +45,10 @@ rebuilt dex files. There was no Android device connected for a physical Redmi
 or Wi-Fi/mobile-data transition test, so those two scenarios still need device
 confirmation.
 
-The QA package is debug-signed. It is suitable for a clean test install, but it
-cannot replace an installation signed with a different production key or serve
-as a production OTA update until the project owner signs it with the same
-release key used by the installed app.
+The current local QA package is `SpeedtestPlus_1.8.9_animfix_debugsigned.apk`
+(SHA-256
+`A3ED7D9CBB04AC2CD0129014C044188AD5E2A6817983B3DFA115BCAF50E261BB`). It is
+debug-signed and suitable for a clean test install, but it cannot replace an
+installation signed with a different production key or serve as a production
+OTA update until the project owner signs it with the same release key used by
+the installed app.

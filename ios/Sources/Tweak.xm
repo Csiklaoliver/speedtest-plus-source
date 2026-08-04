@@ -705,8 +705,12 @@ static void SPRetryProviderControls(UIViewController *controller) {
 }
 
 static void SPAttachProviderControlsAfterLayout(UIViewController *controller) {
-    if (![controller isKindOfClass:UIViewController.class] ||
-        [controller.view viewWithTag:SPButtonTag]) return;
+    if (![controller isKindOfClass:UIViewController.class]) return;
+    // Do not treat any existing tag as proof that the button is still on the
+    // current provider row.  iOS rebuilds that row after server selection;
+    // the old button can remain on the controller while the visible row has
+    // been replaced.  SPAttachProviderControls will reparent stale controls
+    // and rebind the gesture/target to the new row.
     // The provider host is lazy on some iOS builds and can be created after
     // both viewDidLoad and viewDidAppear.  Use the first few layout passes as
     // a bounded retry, rather than relying on a private setter being called.
