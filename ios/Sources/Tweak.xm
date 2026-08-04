@@ -561,7 +561,11 @@ static BOOL SPFallbackLabelIsUsable(UILabel *label) {
     NSString *text = [label.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     if (!text.length || text.length > 64) return NO;
     NSString *lower = text.lowercaseString;
-    for (NSString *excluded in @[@"download", @"upload", @"ping", @"jitter", @"mbps", @"feedback", @"speedtest", @"video", @"map", @"downdetector"]) {
+    // Survey/question labels can sit below the provider row and are often
+    // hosted by generic UIView subclasses.  Exclude their actual text too,
+    // otherwise the hierarchy fallback can attach the controls affordance to
+    // the feedback card instead of the ISP row on a rebuilt UI.
+    for (NSString *excluded in @[@"download", @"upload", @"ping", @"jitter", @"mbps", @"feedback", @"speedtest", @"video", @"map", @"downdetector", @"how would", @"how does", @"expectation", @"compare your", @"rate "]) {
         if ([lower containsString:excluded]) return NO;
     }
     // Device model labels commonly look like SM-S928B or contain only

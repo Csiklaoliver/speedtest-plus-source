@@ -9,7 +9,7 @@ static NSString * const SPCurrentVersion = @"0.1.13";
 static BOOL SPIsNativeSetupController(UIViewController *controller) {
     if (!controller) return NO;
     NSString *name = NSStringFromClass(controller.class).lowercaseString;
-    for (NSString *token in @[@"onboarding", @"educational", @"setup", @"privacy", @"consent", @"welcome", @"permissions"]) {
+    for (NSString *token in @[@"onboarding", @"educational", @"setup", @"privacy", @"consent", @"welcome", @"intro", @"permission"]) {
         if ([name containsString:token]) return YES;
     }
     return NO;
