@@ -5,6 +5,7 @@
 #import "SPState.h"
 #import "SPTheme.h"
 #import "SPControlsViewController.h"
+#import "SPConnectionHealth.h"
 #import "SPShareBuilder.h"
 #import "SPUpdater.h"
 
@@ -628,6 +629,7 @@ static UIButton *SPInstallFallbackProviderButton(UIViewController *controller, U
     // is dismissed that sheet is gone and the button would lose its action.
     UIViewController *presenter = controller;
     if (!presenter) return nil;
+    [SPConnectionHealth noteNativeServerListReady:YES];
 
     UIButton *existing = [controller.view viewWithTag:SPButtonTag];
     if (existing) return existing;
@@ -719,6 +721,7 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
     if (![ispView isKindOfClass:UIView.class]) return;
     UIViewController *presenter = SPViewControllerForView(ispView);
     if (!presenter) return;
+    [SPConnectionHealth noteNativeServerListReady:YES];
 
     UIButton *existing = [presenter.view viewWithTag:SPButtonTag];
     UILabel *existingBadge = [presenter.view viewWithTag:SPBadgeTag];
@@ -912,6 +915,62 @@ static BOOL SPHasStockSetupModal(UIViewController *controller) {
     return NO;
 }
 
+static void SPApplyThemeToController(UIViewController *controller);
+
+// Some app releases keep the first-run sheet inside the speed controller
+// instead of presenting a separately named onboarding controller.  In that
+// layout class-name checks alone miss the native Continue button.  Treat a
+// visible setup action as authoritative and leave the entire stock view
+// untouched until the action has completed.
+static BOOL SPTextLooksLikeNativeSetupAction(NSString *text) {
+    if (![text isKindOfClass:NSString.class]) return NO;
+    NSString *value = text.lowercaseString;
+    value = [value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    for (NSString *token in @[@"continue", @"get started", @"next", @"allow", @"agree"]) {
+        if ([value isEqualToString:token]) return YES;
+    }
+    return NO;
+}
+
+static BOOL SPViewContainsNativeSetupAction(UIView *view) {
+    if (![view isKindOfClass:UIView.class] || view.hidden || view.alpha < 0.01) return NO;
+    if ([view isKindOfClass:UIButton.class]) {
+        UIButton *button = (UIButton *)view;
+        if (SPTextLooksLikeNativeSetupAction([button titleForState:UIControlStateNormal]) ||
+            SPTextLooksLikeNativeSetupAction([button titleForState:UIControlStateSelected])) return YES;
+    }
+    if ([view isKindOfClass:UILabel.class] && SPTextLooksLikeNativeSetupAction(((UILabel *)view).text)) return YES;
+    for (UIView *child in view.subviews) if (SPViewContainsNativeSetupAction(child)) return YES;
+    return NO;
+}
+
+static BOOL SPHasNativeSetupSurface(UIViewController *controller) {
+    if (!controller) return NO;
+    if (SPHasStockSetupModal(controller)) return YES;
+    UIViewController *top = SPTopController(controller);
+    if (top != controller && SPHasStockSetupModal(top)) return YES;
+    if (SPViewContainsNativeSetupAction(controller.view)) return YES;
+    if (top != controller && SPViewContainsNativeSetupAction(top.view)) return YES;
+    return NO;
+}
+
+static void SPInstallSpeedEnhancementsWhenReady(UIViewController *controller, NSInteger attempt) {
+    if (![controller isKindOfClass:UIViewController.class] || attempt > 24) return;
+    __weak UIViewController *weakController = controller;
+    if (SPHasNativeSetupSurface(controller) || controller.presentedViewController) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.75 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            UIViewController *strongController = weakController;
+            if (strongController) SPInstallSpeedEnhancementsWhenReady(strongController, attempt + 1);
+        });
+        return;
+    }
+    SPAttachControls(controller);
+    SPRetryProviderControls(controller);
+    SPApplyThemeToController(controller);
+    UIView *ad = SPObject(controller, NSSelectorFromString(@"rectangleAdView"));
+    ad.hidden = YES;
+}
+
 static void SPQueueIntroGuideAttempt(UIViewController *controller, NSInteger attempt) {
     if (![controller isKindOfClass:UIViewController.class] || SPState.shared.introSeen || attempt > 10) return;
     __weak UIViewController *weakController = controller;
@@ -1060,11 +1119,7 @@ static void (*OrigSpeedViewDidLoad)(id, SEL);
 static void HookSpeedViewDidLoad(id self, SEL _cmd) {
     OrigSpeedViewDidLoad(self, _cmd);
     UIViewController *controller = self;
-    SPAttachControls(controller);
-    SPRetryProviderControls(controller);
-    SPApplyThemeToController(controller);
-    UIView *ad = SPObject(self, NSSelectorFromString(@"rectangleAdView"));
-    ad.hidden = YES;
+    SPInstallSpeedEnhancementsWhenReady(controller, 0);
 }
 
 static void (*OrigSpeedViewDidAppear)(id, SEL, BOOL);
@@ -1074,17 +1129,17 @@ static void HookSpeedViewDidAppear(id self, SEL _cmd, BOOL animated) {
     // Provider controls can be assembled lazily after viewDidLoad. Retry once
     // after the screen is on-window so the ISP-row button remains available
     // even when the private host setter is not observed on this app build.
-    SPRetryProviderControls(controller);
+    SPInstallSpeedEnhancementsWhenReady(controller, 0);
     // The native first-run flow owns this screen.  Do not automatically put a
     // Speedtest+ guide or unlock sheet above it: on iOS the stock Continue
     // action can be visible underneath a modal and appear unresponsive.  Help
     // remains available from the provider-row info button, and update checks
     // begin only after this view is visible and native setup has settled.
-    if (!SPHasStockSetupModal(controller) && !controller.presentedViewController) {
+    if (!SPHasNativeSetupSurface(controller) && !controller.presentedViewController) {
         __weak UIViewController *weakController = controller;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             UIViewController *strongController = weakController;
-            if (!strongController || SPHasStockSetupModal(strongController) || strongController.presentedViewController) return;
+            if (!strongController || SPHasNativeSetupSurface(strongController) || strongController.presentedViewController) return;
             [[SPUpdater shared] checkSilentlyFromViewController:strongController];
         });
     }

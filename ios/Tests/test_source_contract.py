@@ -78,6 +78,9 @@ class SourceContractTests(unittest.TestCase):
 
     def test_first_run_guide_waits_for_native_setup_continue(self):
         self.assertIn("static BOOL SPHasStockSetupModal", TWEAK)
+        self.assertIn("static BOOL SPHasNativeSetupSurface", TWEAK)
+        self.assertIn("SPTextLooksLikeNativeSetupAction", TWEAK)
+        self.assertIn("SPInstallSpeedEnhancementsWhenReady", TWEAK)
         self.assertIn("static void SPQueueIntroGuideAttempt", TWEAK)
         self.assertIn("!providerButton", TWEAK)
         self.assertNotIn("if (!SPState.shared.introSeen) SPQueueIntroGuideAttempt(controller, 0);", TWEAK)
@@ -86,7 +89,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('@"educational"', TWEAK)
 
     def test_update_version_matches_current_ipa(self):
-        self.assertIn('SPCurrentVersion = @"0.1.14"', UPDATER)
+        self.assertIn('SPCurrentVersion = @"0.1.15"', UPDATER)
 
     def test_update_prompt_defers_to_native_setup_and_existing_modals(self):
         self.assertIn("SPIsNativeSetupController", UPDATER)
