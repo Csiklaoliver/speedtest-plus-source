@@ -2,7 +2,7 @@
 #import "SPState.h"
 
 static NSString * const SPManifestURL = @"https://speedtest.oliverprojects.tech/api/ota/manifest";
-static NSString * const SPCurrentVersion = @"0.1.9";
+static NSString * const SPCurrentVersion = @"0.1.10";
 
 static UIViewController *SPUpdatePresenter(UIViewController *preferred) {
     UIViewController *controller = preferred;
