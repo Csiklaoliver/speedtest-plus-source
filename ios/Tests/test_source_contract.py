@@ -60,8 +60,29 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("SPRetryProviderControls(controller)", TWEAK)
         self.assertIn("HookSpeedViewDidLayoutSubviews", TWEAK)
         self.assertIn("SPAttachProviderControlsAfterLayout", TWEAK)
+        self.assertIn("HookSetIspView", TWEAK)
+        self.assertIn("HookSetIspNameLabel", TWEAK)
+        self.assertIn('SPHook(provider, @"setIspView:"', TWEAK)
+        self.assertIn('SPHook(provider, @"setIspNameLabel:"', TWEAK)
+        self.assertIn("HookSetHostView", TWEAK)
+        self.assertIn("HookSetHostNameLabel", TWEAK)
+        self.assertIn("HookSetHostLocationLabel", TWEAK)
+        self.assertIn('SPHook(provider, @"setHostView:"', TWEAK)
+        self.assertIn('SPHook(provider, @"setHostNameLabel:"', TWEAK)
+        self.assertIn('SPHook(provider, @"setHostLocationLabel:"', TWEAK)
         self.assertIn("removeTarget:nil action:NULL", TWEAK)
         self.assertIn("removeGestureRecognizer:oldGesture", TWEAK)
+
+    def test_provider_host_lifecycle_hooks_cover_rebuilt_rows(self):
+        for name in ("setHostView:", "setHostNameLabel:", "setHostLocationLabel:"):
+            self.assertIn(f'SPHook(provider, @"{name}"', TWEAK)
+        self.assertIn("SPInstallProviderHotspot", TWEAK)
+
+    def test_liquid_glass_has_runtime_and_accessibility_fallbacks(self):
+        self.assertIn('NSClassFromString(@"UIGlassEffect")', THEME)
+        self.assertIn("UIAccessibilityIsReduceTransparencyEnabled", THEME)
+        self.assertIn("UIBlurEffectStyleSystemMaterialDark", THEME)
+        self.assertIn("applyFunctionalMaterialToView", THEME)
 
     def test_provider_long_press_has_row_hotspot_fallback(self):
         provider = TWEAK[TWEAK.index("static void SPAttachProviderControls"):TWEAK.index("static BOOL SPIsScopedController")]

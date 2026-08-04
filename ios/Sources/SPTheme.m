@@ -1,4 +1,8 @@
 #import "SPTheme.h"
+#import <objc/message.h>
+#import <objc/runtime.h>
+
+static const void *SPLiquidGlassViewKey = &SPLiquidGlassViewKey;
 
 static UIColor *SPColor(uint32_t rgb) {
     return [UIColor colorWithRed:((rgb >> 16) & 0xff) / 255.0
@@ -84,5 +88,67 @@ static UIColor *SPColor(uint32_t rgb) {
     for (UIView *subview in view.subviews) [self applyTheme:theme toView:subview];
 }
 
-@end
+static UIVisualEffect *SPLiquidGlassEffect(UIColor *tintColor) {
+    // Keep the project deployable with the iOS 12 SDK used by the Theos
+    // build.  Newer UIKit SDKs expose UIGlassEffect, but referring to the
+    // class directly would make older SDK builds fail at compile time.
+    Class glassClass = NSClassFromString(@"UIGlassEffect");
+    SEL factory = NSSelectorFromString(@"effectWithStyle:");
+    if (!glassClass || ![glassClass respondsToSelector:factory]) return nil;
+    NSMethodSignature *signature = [glassClass methodSignatureForSelector:factory];
+    if (!signature) return nil;
+    NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:signature];
+    [invocation setTarget:glassClass];
+    [invocation setSelector:factory];
+    NSInteger style = 0; // regular glass
+    [invocation setArgument:&style atIndex:2];
+    [invocation invoke];
+    __unsafe_unretained UIVisualEffect *effect = nil;
+    [invocation getReturnValue:&effect];
+    if (!effect) return nil;
 
+    SEL tintSetter = NSSelectorFromString(@"setTintColor:");
+    if (tintColor && [effect respondsToSelector:tintSetter]) {
+        ((void (*)(id, SEL, id))objc_msgSend)(effect, tintSetter, tintColor);
+    }
+    SEL interactiveSetter = NSSelectorFromString(@"setInteractive:");
+    if ([effect respondsToSelector:interactiveSetter]) {
+        ((void (*)(id, SEL, BOOL))objc_msgSend)(effect, interactiveSetter, YES);
+    }
+    return effect;
+}
+
++ (void)applyFunctionalMaterialToView:(UIView *)view theme:(SPTheme *)theme {
+    if (!view || !theme) return;
+    UIVisualEffectView *material = objc_getAssociatedObject(view, SPLiquidGlassViewKey);
+    if (![material isKindOfClass:UIVisualEffectView.class]) {
+        material = [[UIVisualEffectView alloc] initWithEffect:nil];
+        material.translatesAutoresizingMaskIntoConstraints = NO;
+        material.userInteractionEnabled = NO;
+        material.layer.cornerRadius = 16.0;
+        material.layer.masksToBounds = YES;
+        [view insertSubview:material atIndex:0];
+        [NSLayoutConstraint activateConstraints:@[
+            [material.leadingAnchor constraintEqualToAnchor:view.leadingAnchor],
+            [material.trailingAnchor constraintEqualToAnchor:view.trailingAnchor],
+            [material.topAnchor constraintEqualToAnchor:view.topAnchor],
+            [material.bottomAnchor constraintEqualToAnchor:view.bottomAnchor]
+        ]];
+        objc_setAssociatedObject(view, SPLiquidGlassViewKey, material, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+
+    BOOL reduceTransparency = UIAccessibilityIsReduceTransparencyEnabled();
+    UIVisualEffect *effect = reduceTransparency ? nil : SPLiquidGlassEffect(theme.downloadStart);
+    if (!effect) {
+        if (@available(iOS 13.0, *)) effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterialDark];
+        else effect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
+    }
+    material.effect = effect;
+    material.backgroundColor = reduceTransparency
+        ? [theme.surface colorWithAlphaComponent:0.98]
+        : [theme.surface colorWithAlphaComponent:0.18];
+    material.layer.borderWidth = 1.0;
+    material.layer.borderColor = [theme.divider colorWithAlphaComponent:0.65].CGColor;
+}
+
+@end

@@ -610,6 +610,7 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
     button.accessibilityHint = @"Opens the Speedtest+ guide and controls";
     button.backgroundColor = UIColor.clearColor;
     button.clipsToBounds = NO;
+    [SPTheme applyFunctionalMaterialToView:button theme:[SPTheme themeAtIndex:SPState.shared.themeIndex]];
     // Keep the visual icon compact while providing the full 48pt touch target
     // expected by iOS accessibility and by the controls guide.
     [button.widthAnchor constraintEqualToConstant:48].active = YES;
@@ -928,6 +929,56 @@ static void HookSetAssemblyStackView(id self, SEL _cmd, id stack) {
     dispatch_async(dispatch_get_main_queue(), ^{ SPAttachProviderControls(self, stack); });
 }
 
+static void (*OrigSetIspView)(id, SEL, id);
+static void HookSetIspView(id self, SEL _cmd, id view) {
+    OrigSetIspView(self, _cmd, view);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIStackView *stack = SPObject(self, NSSelectorFromString(@"assemblyStackView"));
+        SPAttachProviderControls(self, [stack isKindOfClass:UIStackView.class] ? stack : nil);
+    });
+}
+
+static void (*OrigSetIspNameLabel)(id, SEL, id);
+static void HookSetIspNameLabel(id self, SEL _cmd, id label) {
+    OrigSetIspNameLabel(self, _cmd, label);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIStackView *stack = SPObject(self, NSSelectorFromString(@"assemblyStackView"));
+        SPAttachProviderControls(self, [stack isKindOfClass:UIStackView.class] ? stack : nil);
+    });
+}
+
+// The provider host is assembled in pieces on recent iOS builds.  The ISP
+// view/label setters are not guaranteed to run in a fixed order, and the
+// visible row can be replaced after a server selection.  Rebind after every
+// provider-only setter so the Speedtest+ entry point follows the current row
+// without touching the native server-selection button.
+static void (*OrigSetHostView)(id, SEL, id);
+static void HookSetHostView(id self, SEL _cmd, id view) {
+    OrigSetHostView(self, _cmd, view);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIStackView *stack = SPObject(self, NSSelectorFromString(@"assemblyStackView"));
+        SPAttachProviderControls(self, [stack isKindOfClass:UIStackView.class] ? stack : nil);
+    });
+}
+
+static void (*OrigSetHostNameLabel)(id, SEL, id);
+static void HookSetHostNameLabel(id self, SEL _cmd, id label) {
+    OrigSetHostNameLabel(self, _cmd, label);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIStackView *stack = SPObject(self, NSSelectorFromString(@"assemblyStackView"));
+        SPAttachProviderControls(self, [stack isKindOfClass:UIStackView.class] ? stack : nil);
+    });
+}
+
+static void (*OrigSetHostLocationLabel)(id, SEL, id);
+static void HookSetHostLocationLabel(id self, SEL _cmd, id label) {
+    OrigSetHostLocationLabel(self, _cmd, label);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIStackView *stack = SPObject(self, NSSelectorFromString(@"assemblyStackView"));
+        SPAttachProviderControls(self, [stack isKindOfClass:UIStackView.class] ? stack : nil);
+    });
+}
+
 static BOOL (*OrigCanShowAd)(id, SEL, id);
 static BOOL HookCanShowAd(id self, SEL _cmd, id view) { return NO; }
 
@@ -1061,6 +1112,11 @@ __attribute__((constructor)) static void SpeedtestPlusInitialize(void) {
         SPHook(gauge, @"beginPressedWithSender:event:", (IMP)HookGaugeBegin, (IMP *)&OrigGaugeBegin);
         Class provider = NSClassFromString(@"_TtC5Gauge17ISPHostController");
         SPHook(provider, @"setAssemblyStackView:", (IMP)HookSetAssemblyStackView, (IMP *)&OrigSetAssemblyStackView);
+        SPHook(provider, @"setIspView:", (IMP)HookSetIspView, (IMP *)&OrigSetIspView);
+        SPHook(provider, @"setIspNameLabel:", (IMP)HookSetIspNameLabel, (IMP *)&OrigSetIspNameLabel);
+        SPHook(provider, @"setHostView:", (IMP)HookSetHostView, (IMP *)&OrigSetHostView);
+        SPHook(provider, @"setHostNameLabel:", (IMP)HookSetHostNameLabel, (IMP *)&OrigSetHostNameLabel);
+        SPHook(provider, @"setHostLocationLabel:", (IMP)HookSetHostLocationLabel, (IMP *)&OrigSetHostLocationLabel);
 
         Class details = NSClassFromString(@"_TtC9SpeedTest27ResultDetailsViewController");
         SPHook(details, @"viewDidLoad", (IMP)HookResultDetailsViewDidLoad, (IMP *)&OrigGenericViewDidLoad);

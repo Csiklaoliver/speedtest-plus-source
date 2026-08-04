@@ -39,7 +39,9 @@ current development machine cannot run or sign the iOS build.
 - Loading fills the fields but does not activate them until Apply.
 - The active badge is hidden with zero overrides.
 - The badge count matches the eight override categories.
-- Hiding the panel removes the visible ISP-row info button.
+- When the panel is password-protected, the ISP-row info button remains the
+  private Speedtest+ unlock affordance; it must not create a floating control
+  or alter the native server row.
 - Long-press opens the unlock prompt and a valid password opens controls.
 - The guide appears once and can be reopened from the info button.
 
@@ -64,6 +66,14 @@ current development machine cannot run or sign the iOS build.
 - Update checks do nothing when no `ios` manifest entry exists.
 - A newer iOS entry displays one prompt and opens the signed download page.
 - Disabling checks persists.
+
+## Material and accessibility
+
+- On systems exposing `UIGlassEffect`, the controls surface uses the regular
+  Liquid Glass material with the selected theme tint.
+- On older systems, or when Reduce Transparency is enabled, the panel falls
+  back to a dark blur/opaque surface and remains readable and tappable.
+- The native gauge/content layer is not covered by the material effect.
 
 ## Reviewer notes to return
 

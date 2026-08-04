@@ -199,6 +199,7 @@
 
     [self fillFromConfiguration:SPState.shared.configuration];
     [SPTheme applyTheme:theme toView:self.view];
+    [SPTheme applyFunctionalMaterialToView:self.view theme:theme];
 }
 
 - (UILabel *)label:(NSString *)text {

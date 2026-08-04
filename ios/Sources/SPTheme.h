@@ -16,7 +16,10 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSArray<SPTheme *> *)allThemes;
 + (SPTheme *)themeAtIndex:(NSInteger)index;
 + (void)applyTheme:(SPTheme *)theme toView:(UIView *)view;
+// Uses Liquid Glass when the running OS exposes it, while retaining a
+// reduced-transparency/older-iOS fallback.  This is intentionally for the
+// custom controls surface, not the native gauge/content layer.
++ (void)applyFunctionalMaterialToView:(UIView *)view theme:(SPTheme *)theme;
 @end
 
 NS_ASSUME_NONNULL_END
-

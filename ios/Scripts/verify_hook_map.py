@@ -23,7 +23,11 @@ EXPECTED = {
     },
     "Gauge": {
         "_TtC5Gauge22GaugeViewControlleriOS": {"beginPressedWithSender:event:"},
-        "_TtC5Gauge17ISPHostController": {"setAssemblyStackView:", "ispView"},
+        "_TtC5Gauge17ISPHostController": {
+            "setAssemblyStackView:", "ispView", "setIspView:", "ispNameLabel",
+            "setIspNameLabel:", "hostView", "setHostView:", "hostNameLabel",
+            "setHostNameLabel:", "hostLocationLabel", "setHostLocationLabel:",
+        },
     },
     "SpeedTestEngine": {
         "TestParameters": {"stageType", "progress"},

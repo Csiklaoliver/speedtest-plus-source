@@ -11,6 +11,8 @@ selection flow.
 - ISP, server provider, and server location controls
 - Three named profiles
 - Ten persistent dark themes
+- Runtime Liquid Glass controls material on supported iOS releases, with
+  accessibility and older-iOS fallbacks
 - A one-time guide, active override badge, and password lock option
 - Consistent local result details, compare labels, feedback text, sharing, and CSV
 - Opt-in update checks for a sideloadable release

@@ -61,6 +61,13 @@ in this repository.
 The Speedtest+ dynamic library uses Objective-C runtime swizzling directly and
 does not require a bundled Substrate dynamic library in a sideloaded IPA.
 
+The controls panel adopts Liquid Glass at runtime when the installed iOS
+version exposes `UIGlassEffect`. The implementation looks up that API by name,
+so the iOS 12 deployment target remains buildable. Older systems and devices
+with Reduce Transparency enabled use a dark blur or opaque themed surface.
+Only the custom controls surface and its provider-row info button use this
+material; the native gauge and test content remain untouched.
+
 ## Public release destination
 
 The canonical public release page is the
