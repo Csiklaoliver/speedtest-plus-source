@@ -40,10 +40,10 @@ jobs:
       - name: Install build requirements
         run: brew install ldid make
       - name: Install Theos
-        run: git clone --recursive --depth 1 https://github.com/theos/theos.git "$RUNNER_TEMP/theos"
+        run: git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
       - name: Compile unsigned package
         env:
-          THEOS: ${{ runner.temp }}/theos
+          THEOS: ${{ github.workspace }}/.theos-ci
         run: make package FINALPACKAGE=1
       - name: Upload unsigned tweak artifact
         uses: actions/upload-artifact@v4
