@@ -61,6 +61,16 @@ in this repository.
 The Speedtest+ dynamic library uses Objective-C runtime swizzling directly and
 does not require a bundled Substrate dynamic library in a sideloaded IPA.
 
+## Public release destination
+
+The canonical public release page is the
+[Speedtest+ docs repository](https://github.com/Csiklaoliver/speedtest-plus-docs).
+After review and signing, publish the final IPA and its checksum there, then
+update that repository's `RELEASES.md` and `ota/manifest.json` in the same
+change. Do not publish final binaries or OTA links in this source repository.
+The GitHub Actions workflow in this repository produces a reviewable artifact;
+it does not create a source-repository release.
+
 ## OTA behavior on iOS
 
 iOS does not permit this injected extension to silently replace the containing

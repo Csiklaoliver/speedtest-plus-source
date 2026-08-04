@@ -62,6 +62,17 @@ python3 Scripts/verify_objc_syntax.py
 See [`docs/OFFLINE_AND_DATA_SAVER.md`](docs/OFFLINE_AND_DATA_SAVER.md) for the
 user-facing behavior, traffic limits, and platform adapter boundaries.
 
+## Public releases
+
+The canonical public release page is the
+[Speedtest+ docs repository](https://github.com/Csiklaoliver/speedtest-plus-docs).
+Publish final APK/IPA files, release notes, download links, checksums, and OTA
+manifest updates there. This repository remains the source, tests, build
+instructions, and CI-artifact repository; it is not the public binary download
+page. The iOS workflow intentionally uploads a short-lived build artifact so
+it can be reviewed and published to the docs repository without putting final
+downloads or signing material in source history.
+
 ## Scope and safety
 
 Telemetry is off until the user opts in. The event contract contains no
