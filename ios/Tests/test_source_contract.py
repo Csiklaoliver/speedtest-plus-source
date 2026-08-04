@@ -73,6 +73,13 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("removeTarget:nil action:NULL", TWEAK)
         self.assertIn("removeGestureRecognizer:oldGesture", TWEAK)
 
+    def test_first_run_guide_waits_for_native_setup_continue(self):
+        self.assertIn("static BOOL SPHasStockSetupModal", TWEAK)
+        self.assertIn("static void SPQueueIntroGuideAttempt", TWEAK)
+        self.assertIn("!providerButton", TWEAK)
+        self.assertIn("SPQueueIntroGuideAttempt(controller, 0)", TWEAK)
+        self.assertIn('containsString:@"educational"', TWEAK)
+
     def test_provider_host_lifecycle_hooks_cover_rebuilt_rows(self):
         for name in ("setHostView:", "setHostNameLabel:", "setHostLocationLabel:"):
             self.assertIn(f'SPHook(provider, @"{name}"', TWEAK)

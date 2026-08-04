@@ -732,6 +732,39 @@ static void SPRetryProviderControls(UIViewController *controller) {
     }
 }
 
+// The stock app can present its privacy/educational setup modal just after
+// the speed controller's first viewDidAppear.  Presenting the Speedtest+
+// guide in that small race window leaves the native Continue button visually
+// present underneath an alert and makes it appear unresponsive.  Wait until
+// the provider row (our real entry point) is attached and never put the guide
+// above a stock onboarding/setup controller.
+static BOOL SPHasStockSetupModal(UIViewController *controller) {
+    UIViewController *shown = controller.presentedViewController;
+    if (!shown) return NO;
+    NSString *name = NSStringFromClass(shown.class).lowercaseString;
+    return [name containsString:@"onboarding"] ||
+           [name containsString:@"educational"] ||
+           [name containsString:@"setup"] ||
+           [name containsString:@"privacy"] ||
+           [name containsString:@"consent"];
+}
+
+static void SPQueueIntroGuideAttempt(UIViewController *controller, NSInteger attempt) {
+    if (![controller isKindOfClass:UIViewController.class] || SPState.shared.introSeen || attempt > 10) return;
+    __weak UIViewController *weakController = controller;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.50 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        UIViewController *strongController = weakController;
+        if (!strongController || SPState.shared.introSeen) return;
+        SPFindProviderControlsInView(strongController.view);
+        UIButton *providerButton = [strongController.view viewWithTag:SPButtonTag];
+        if (strongController.presentedViewController || SPHasStockSetupModal(strongController) || !providerButton) {
+            SPQueueIntroGuideAttempt(strongController, attempt + 1);
+            return;
+        }
+        [SPControlsViewController presentGuideFrom:strongController allowOpenControls:YES];
+    });
+}
+
 static void SPAttachProviderControlsAfterLayout(UIViewController *controller) {
     if (![controller isKindOfClass:UIViewController.class]) return;
     // Do not treat any existing tag as proof that the button is still on the
@@ -876,9 +909,7 @@ static void HookSpeedViewDidAppear(id self, SEL _cmd, BOOL animated) {
     // after the screen is on-window so the ISP-row button remains available
     // even when the private host setter is not observed on this app build.
     SPRetryProviderControls(controller);
-    if (!SPState.shared.introSeen && !controller.presentedViewController) {
-        [SPControlsViewController presentGuideFrom:controller allowOpenControls:YES];
-    }
+    if (!SPState.shared.introSeen) SPQueueIntroGuideAttempt(controller, 0);
     SPHideOfficialUpdateBanner(self);
 }
 
