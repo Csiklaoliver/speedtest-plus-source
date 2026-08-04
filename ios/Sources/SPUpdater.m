@@ -4,7 +4,7 @@
 static NSString * const SPManifestURL = @"https://speedtest.oliverprojects.tech/api/ota/manifest";
 // Keep this in sync with the IPA's CFBundleShortVersionString.  A stale
 // value here makes every current install report its own release as an update.
-static NSString * const SPCurrentVersion = @"0.1.15";
+static NSString * const SPCurrentVersion = @"0.1.16";
 
 static BOOL SPIsNativeSetupController(UIViewController *controller) {
     if (!controller) return NO;
