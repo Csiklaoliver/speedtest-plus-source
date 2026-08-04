@@ -597,7 +597,7 @@ static UILabel *SPFallbackProviderLabel(UIViewController *controller) {
         if (!SPFallbackLabelIsUsable(label) || !label.superview) continue;
         if (SPFallbackLabelIsInNonProviderSurface(label, controller)) continue;
         CGRect rect = [label.superview convertRect:label.frame toView:controller.view];
-        if (CGRectIsNull(rect) || CGRectIsInfinite(rect) || rect.size.width < 24.0 || rect.midY < bounds.size.height * 0.55) continue;
+        if (CGRectIsNull(rect) || CGRectIsInfinite(rect) || rect.size.width < 24.0 || CGRectGetMidY(rect) < bounds.size.height * 0.55) continue;
         // The ISP row is the lowest text cluster in the speed card.  Prefer
         // the leftmost label when ISP and server labels share a baseline.
         if (!best || rect.origin.y > bestRect.origin.y + 16.0 ||
