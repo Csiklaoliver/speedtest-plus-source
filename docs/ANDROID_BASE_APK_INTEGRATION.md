@@ -26,6 +26,26 @@ to modify their own copy.
 9. Verify alignment, signing schemes, package name, and version code.
 10. Keep the decoded tree, APKs, and keys outside the public source tree.
 
+## Offline and data-saver modes
+
+The portable [`TestMode`](../src/main/java/tech/oliverprojects/speedtestplus/core/TestMode.java)
+contract defines the shared behavior. A local Android adapter should expose two
+mutually exclusive controls:
+
+- **Offline demo:** skip the native start/connection request, drive the local
+  display with a clearly labelled synthetic result, and never call a provider
+  report or submission API.
+- **Data saver:** keep the native measured path, applying a maximum of 2
+  seconds and 262,144 bytes per connection in the native `SuiteConfig` (or the
+  equivalent configuration object for that base version).
+
+Apply the data-saver limits immediately before each test configuration is
+handed to the engine, because some releases clone the configuration during
+startup. Store the mode flags in the app's private preferences, clear both on
+**Disable All**, and leave the normal measured path untouched when neither is
+selected. Do not publish the decoded vendor adapter or a rebuilt APK here;
+keep those local as described above.
+
 ## Required regression checks
 
 - 320dp width, 1.3x font scale, landscape, and gesture navigation.

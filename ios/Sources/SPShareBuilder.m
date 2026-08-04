@@ -10,8 +10,12 @@
 }
 
 + (NSString *)plainTextFromResult:(NSDictionary<NSString *,id> *)result {
+    NSString *mode = [result[@"offline_demo"] boolValue]
+        ? @"Mode: Offline demo (local only)\n"
+        : ([result[@"data_saver"] boolValue] ? @"Mode: Data saver (bounded real test)\n" : @"");
     return [NSString stringWithFormat:
-        @"Speedtest+ Result\nDownload: %@ Mbps\nUpload: %@ Mbps\nPing: %@ ms\nJitter: %@ ms\nPacket loss: %@%%\nISP: %@\nServer: %@\nLocation: %@",
+        @"Speedtest+ Result\n%@Download: %@ Mbps\nUpload: %@ Mbps\nPing: %@ ms\nJitter: %@ ms\nPacket loss: %@%%\nISP: %@\nServer: %@\nLocation: %@",
+        mode,
         [self display:result[@"download_mbps"] format:@"%.1f"],
         [self display:result[@"upload_mbps"] format:@"%.1f"],
         [self display:result[@"ping_ms"] format:@"%.0f"],

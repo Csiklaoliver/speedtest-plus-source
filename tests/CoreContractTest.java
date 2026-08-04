@@ -5,6 +5,7 @@ import tech.oliverprojects.speedtestplus.core.SpeedCurve;
 import tech.oliverprojects.speedtestplus.core.SpeedPlusConfig;
 import tech.oliverprojects.speedtestplus.core.TelemetryConsent;
 import tech.oliverprojects.speedtestplus.core.ThemeCodeCodec;
+import tech.oliverprojects.speedtestplus.core.TestMode;
 
 public final class CoreContractTest {
     public static void main(String[] args) {
@@ -13,6 +14,7 @@ public final class CoreContractTest {
         displayCurveMovesAndFinishesExactly();
         telemetryIsOptIn();
         themeCodesRoundTripAndRejectCorruption();
+        testModesAreSafeAndPortable();
         System.out.println("CoreContractTest: PASS");
     }
 
@@ -78,6 +80,31 @@ public final class CoreContractTest {
             rejected = true;
         }
         require(rejected, "corrupted theme code must fail closed");
+    }
+
+    private static void testModesAreSafeAndPortable() {
+        SpeedPlusConfig config = new SpeedPlusConfig();
+        config.offlineMode = true;
+        config.dataSaverMode = true;
+        ConfigValidator.Result validated = ConfigValidator.validate(config);
+        require(validated.config().offlineMode, "offline mode must survive validation");
+        require(!validated.config().dataSaverMode, "offline mode must disable data saver");
+        require(!validated.warnings().isEmpty(), "mode conflict should explain itself");
+
+        SpeedPlusConfig saver = new SpeedPlusConfig();
+        saver.dataSaverMode = true;
+        require(TestMode.isDataSaver(saver), "data saver mode must be detectable");
+        require(TestMode.DATA_SAVER_MAX_BYTES_PER_CONNECTION == 262144,
+                "data saver byte budget must stay conservative");
+        require(TestMode.DATA_SAVER_MAX_DURATION_SECONDS == 2,
+                "data saver duration must stay bounded");
+
+        FinalResult demo = TestMode.offlineResult(validated.config(), 42L);
+        require(demo.downloadMbps.equals(100.0d), "blank offline download should use demo baseline");
+        require(demo.uploadMbps.equals(20.0d), "blank offline upload should use demo baseline");
+        require("Offline demo".equals(demo.isp), "offline identity must be explicit");
+        require(!TestMode.allowsRemoteSubmission(validated.config()),
+                "offline result must not be remotely submitted");
     }
 
     private static void require(boolean condition, String message) {

@@ -41,6 +41,7 @@ FOUNDATION_EXPORT NSString * const SPThemeDidChangeNotification;
 - (BOOL)runHasSpeedOverrideForDirection:(SPDirection)direction;
 - (nullable NSNumber *)runNumberForKey:(NSString *)key;
 - (nullable NSString *)runStringForKey:(NSString *)key;
+- (BOOL)runBoolForKey:(NSString *)key;
 - (nullable NSDictionary<NSString *, id> *)consumePendingLocalResult;
 - (double)displayMbpsForDirection:(SPDirection)direction measuredMbps:(double)measured progress:(double)progress;
 - (double)finalMbpsForDirection:(SPDirection)direction measuredMbps:(double)measured;
@@ -52,6 +53,9 @@ FOUNDATION_EXPORT NSString * const SPThemeDidChangeNotification;
                                      isp:(nullable NSString *)isp
                           serverProvider:(nullable NSString *)serverProvider
                           serverLocation:(nullable NSString *)serverLocation;
+
+/// Finishes a local, clearly-labelled demo without contacting the network.
+- (void)completeOfflineDemo;
 
 - (nullable NSNumber *)numberForKey:(NSString *)key;
 - (nullable NSString *)stringForKey:(NSString *)key;

@@ -16,6 +16,19 @@ public final class SpeedPlusConfig {
     public String serverProvider;
     public String serverLocation;
 
+    /**
+     * Run a clearly-labelled local demonstration without opening a network
+     * connection.  Platform adapters must never submit this result remotely.
+     */
+    public boolean offlineMode;
+
+    /**
+     * Keep the normal measured test, but ask the native engine to use a small
+     * per-connection byte/time budget.  The adapter must disclose that the
+     * resulting throughput is a bounded, data-saving measurement.
+     */
+    public boolean dataSaverMode;
+
     public SpeedPlusConfig copy() {
         SpeedPlusConfig value = new SpeedPlusConfig();
         value.downloadMinMbps = downloadMinMbps;
@@ -28,6 +41,8 @@ public final class SpeedPlusConfig {
         value.isp = isp;
         value.serverProvider = serverProvider;
         value.serverLocation = serverLocation;
+        value.offlineMode = offlineMode;
+        value.dataSaverMode = dataSaverMode;
         return value;
     }
 }
