@@ -35,19 +35,27 @@ a legally supplied base package.
   engine is quiet.
 - `DISABLE ALL` invalidates queued live frames before clearing the active
   configuration.
+- The offline-state accessor uses valid Dalvik registers, and the guarded gauge
+  bridge jumps past its exception handler on the normal path.  This prevents the
+  verifier crashes that only appeared when the first live frame was scheduled.
 
 ## Verification
 
 The local build was checked for package metadata (`org.zwanoo.android.speedtest`,
 version code `258549`, version name `1.8.9`), v2/v3 APK signatures, zip
 alignment, and presence of the server-refresh and gauge-bridge methods in the
-rebuilt dex files. There was no Android device connected for a physical Redmi
-or Wi-Fi/mobile-data transition test, so those two scenarios still need device
-confirmation.
+rebuilt dex files. A runtime smoke test on an Android 16 emulator reached
+official onboarding, the main Speed screen, the provider info guide, the
+controls dialog, and the offline/demo start path without a verifier, class
+loader, native-link, or fatal-process error. There was no physical Android
+device connected for a Redmi or Wi-Fi/mobile-data transition test, so those
+device-specific scenarios still need confirmation.
 
-The current local QA package is `SpeedtestPlus_1.8.9_animfix_debugsigned.apk`
-(SHA-256
-`A3ED7D9CBB04AC2CD0129014C044188AD5E2A6817983B3DFA115BCAF50E261BB`). It is
+The runtime-verified QA package is
+`SpeedtestPlus_1.8.9_runtimefix_debugsigned.apk` (SHA-256
+`A74EA5868BD574B5493E8A51ED089777E7D52603B2F73BE296272F0F082E1C8F`) and was
+signed with the Android 34 signer because the Android 36 signer rewrote native
+library ZIP flags and produced an install-time extraction failure. It is
 debug-signed and suitable for a clean test install, but it cannot replace an
 installation signed with a different production key or serve as a production
 OTA update until the project owner signs it with the same release key used by
