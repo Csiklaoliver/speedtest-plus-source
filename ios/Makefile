@@ -12,6 +12,7 @@ SpeedtestPlus_FILES = \
 	Sources/SPTheme.m \
 	Sources/SPControlsViewController.m \
 	Sources/SPDiagnostics.m \
+	Sources/SPConnectionHealth.m \
 	Sources/SPMotion.m \
 	Sources/SPShareBuilder.m \
 	Sources/SPUpdater.m

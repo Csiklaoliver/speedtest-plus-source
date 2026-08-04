@@ -2,6 +2,7 @@
 #import "SPState.h"
 #import "SPTheme.h"
 #import "SPDiagnostics.h"
+#import "SPConnectionHealth.h"
 #import <math.h>
 #import <limits.h>
 
@@ -190,6 +191,9 @@
     UIButton *diagnostics = [self button:@"Copy diagnostics" action:@selector(copyDiagnostics)];
     diagnostics.accessibilityLabel = @"Copy privacy-safe diagnostics";
     [self.stack addArrangedSubview:diagnostics];
+    UIButton *health = [self button:@"Check connection health" action:@selector(checkConnectionHealth)];
+    health.accessibilityLabel = @"Check privacy-safe connection health";
+    [self.stack addArrangedSubview:health];
     UIButton *lock = [self button:@"Hide or password protect controls" action:@selector(configureLock)];
     [self.stack addArrangedSubview:lock];
     UIStackView *links = [self horizontalStack];
@@ -222,6 +226,16 @@
     [self dismissKeyboard];
     UIPasteboard.generalPasteboard.string = SPDiagnosticsText(SPState.shared);
     [self showMessage:@"Diagnostics copied. It contains no IP address, account, device ID, exact location, credentials, or identity text."];
+}
+
+- (void)checkConnectionHealth {
+    [self dismissKeyboard];
+    BOOL offline = [SPState.shared.configuration[@"offline_mode"] boolValue];
+    __weak typeof(self) weakSelf = self;
+    [SPConnectionHealth runWithOfflineMode:offline completion:^(NSString *summary) {
+        __strong typeof(weakSelf) self = weakSelf;
+        if (self) [self showMessage:summary];
+    }];
 }
 
 - (UILabel *)label:(NSString *)text {
