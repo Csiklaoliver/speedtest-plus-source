@@ -451,6 +451,7 @@ static void SPRefreshBadge(UIViewController *controller) {
     // Hiding it made the password-protected mode impossible to rediscover on
     // builds where the provider long-press was swallowed by a private view.
     button.hidden = NO;
+    if (button) [SPTheme applyFunctionalMaterialToView:button theme:[SPTheme themeAtIndex:SPState.shared.themeIndex]];
     button.accessibilityHint = SPState.shared.panelHidden
         ? @"Unlocks the password-protected Speedtest+ controls"
         : @"Opens the Speedtest+ guide and controls";
