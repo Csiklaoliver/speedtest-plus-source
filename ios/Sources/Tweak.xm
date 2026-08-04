@@ -15,6 +15,10 @@ static const NSInteger SPStageDownload = 2;
 static const NSInteger SPStageUpload = 3;
 static const NSInteger SPButtonTag = 0x53505031;
 static const NSInteger SPBadgeTag = 0x53505032;
+// A transparent, non-accessibility fallback target stays in the provider row
+// when the private ISP view drops or swallows long-press gestures.  It is not
+// a floating control and is never added to the gauge or navigation bar.
+static const NSInteger SPProviderHotspotTag = 0x53505033;
 static const void *SPObserverTokenKey = &SPObserverTokenKey;
 
 static id SPObject(id object, SEL selector);
@@ -397,6 +401,7 @@ static const void *SPActionTargetKey = &SPActionTargetKey;
 static const void *SPOriginalLabelTextKey = &SPOriginalLabelTextKey;
 static const void *SPPreviousLabelOverrideKey = &SPPreviousLabelOverrideKey;
 static const void *SPProviderGestureKey = &SPProviderGestureKey;
+static const void *SPProviderHotspotKey = &SPProviderHotspotKey;
 
 static UIViewController *SPViewControllerForView(UIView *view) {
     UIResponder *responder = view;
@@ -452,6 +457,54 @@ static BOOL SPViewIsDescendantOf(UIView *view, UIView *ancestor) {
     return NO;
 }
 
+static void SPInstallProviderLongPress(UIView *view, SPActionTarget *target) {
+    if (![view isKindOfClass:UIView.class] || !target) return;
+    // Some builds expose ispView as a passive container and some put a label
+    // above it.  Explicitly enabling interaction and installing the gesture
+    // on each provider-only view makes the shortcut work in both layouts.
+    view.userInteractionEnabled = YES;
+    UILongPressGestureRecognizer *oldGesture = objc_getAssociatedObject(view, SPProviderGestureKey);
+    if (oldGesture) [view removeGestureRecognizer:oldGesture];
+    UILongPressGestureRecognizer *gesture = [[UILongPressGestureRecognizer alloc] initWithTarget:target action:@selector(longPressed:)];
+    gesture.minimumPressDuration = 0.55;
+    gesture.allowableMovement = 24.0;
+    gesture.cancelsTouchesInView = NO;
+    [view addGestureRecognizer:gesture];
+    objc_setAssociatedObject(view, SPProviderGestureKey, gesture, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+static UIButton *SPInstallProviderHotspot(UIViewController *presenter, UIView *providerView, UILabel *ispLabel, SPActionTarget *target) {
+    if (!presenter || ![providerView isKindOfClass:UIView.class] || !target) return nil;
+    UIButton *hotspot = [presenter.view viewWithTag:SPProviderHotspotTag];
+    if (hotspot && !SPViewIsDescendantOf(hotspot, providerView)) {
+        [hotspot removeFromSuperview];
+        hotspot = nil;
+    }
+    if (!hotspot) {
+        hotspot = [UIButton buttonWithType:UIButtonTypeCustom];
+        hotspot.tag = SPProviderHotspotTag;
+        hotspot.translatesAutoresizingMaskIntoConstraints = NO;
+        hotspot.backgroundColor = UIColor.clearColor;
+        hotspot.alpha = 0.02; // still hit-testable, but visually invisible
+        hotspot.isAccessibilityElement = NO;
+        hotspot.accessibilityElementsHidden = YES;
+        [providerView addSubview:hotspot];
+        [hotspot.widthAnchor constraintEqualToConstant:48].active = YES;
+        [hotspot.heightAnchor constraintEqualToConstant:48].active = YES;
+        [hotspot.trailingAnchor constraintEqualToAnchor:providerView.trailingAnchor].active = YES;
+        if ([ispLabel isKindOfClass:UILabel.class]) {
+            [hotspot.centerYAnchor constraintEqualToAnchor:ispLabel.centerYAnchor].active = YES;
+        } else {
+            [hotspot.centerYAnchor constraintEqualToAnchor:providerView.centerYAnchor].active = YES;
+        }
+    }
+    [hotspot removeTarget:nil action:NULL forControlEvents:UIControlEventTouchUpInside];
+    [hotspot addTarget:target action:@selector(openControls) forControlEvents:UIControlEventTouchUpInside];
+    hotspot.hidden = NO;
+    objc_setAssociatedObject(providerView, SPProviderHotspotKey, hotspot, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return hotspot;
+}
+
 static void SPRemoveLegacyFloatingControls(UIViewController *controller) {
     if (![controller isKindOfClass:UIViewController.class]) return;
     // Builds before 0.1.3 placed the controls in the lower-right corner of
@@ -473,13 +526,16 @@ static void SPAttachControls(UIViewController *controller) {
 }
 
 static void SPAttachProviderControls(id hostController, UIStackView *stack) {
-    if (![stack isKindOfClass:UIStackView.class]) return;
-    UIViewController *presenter = SPViewControllerForView(stack);
-    if (!presenter) return;
-
     UIView *ispView = SPObject(hostController, NSSelectorFromString(@"ispView"));
     UILabel *ispLabel = SPLabel(hostController, @"ispNameLabel");
-    if (![ispView isKindOfClass:UIView.class] || ![ispLabel isKindOfClass:UILabel.class]) return;
+    if (![ispLabel isKindOfClass:UILabel.class]) return;
+    // A few iOS builds return nil for the private ispView accessor even though
+    // the label is already attached.  Use its row as a safe provider-only
+    // fallback instead of abandoning the controls entry point.
+    if (![ispView isKindOfClass:UIView.class]) ispView = ispLabel.superview;
+    if (![ispView isKindOfClass:UIView.class]) return;
+    UIViewController *presenter = SPViewControllerForView(ispView);
+    if (!presenter) return;
 
     UIButton *existing = [presenter.view viewWithTag:SPButtonTag];
     UILabel *existingBadge = [presenter.view viewWithTag:SPBadgeTag];
@@ -497,15 +553,10 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
         objc_setAssociatedObject(hostController, SPActionTargetKey, target, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         [existing removeTarget:nil action:NULL forControlEvents:UIControlEventTouchUpInside];
         [existing addTarget:target action:@selector(openGuide) forControlEvents:UIControlEventTouchUpInside];
-        if ([ispView isKindOfClass:UIView.class]) {
-            UILongPressGestureRecognizer *oldGesture = objc_getAssociatedObject(ispView, SPProviderGestureKey);
-            if (oldGesture) [ispView removeGestureRecognizer:oldGesture];
-            UILongPressGestureRecognizer *gesture = [[UILongPressGestureRecognizer alloc] initWithTarget:target action:@selector(longPressed:)];
-            gesture.minimumPressDuration = 0.75;
-            gesture.cancelsTouchesInView = NO;
-            [ispView addGestureRecognizer:gesture];
-            objc_setAssociatedObject(ispView, SPProviderGestureKey, gesture, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        }
+        SPInstallProviderLongPress(ispView, target);
+        SPInstallProviderLongPress(ispLabel, target);
+        if (ispLabel.superview != ispView) SPInstallProviderLongPress(ispLabel.superview, target);
+        SPInstallProviderHotspot(presenter, ispView, ispLabel, target);
         SPApplyProviderLabels(hostController);
         SPRefreshBadge(presenter);
         return;
@@ -571,16 +622,10 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
     }
 
     UIView *providerView = ispView;
-    if ([providerView isKindOfClass:UIView.class]) {
-        UILongPressGestureRecognizer *gesture = objc_getAssociatedObject(providerView, SPProviderGestureKey);
-        if (!gesture) {
-            gesture = [[UILongPressGestureRecognizer alloc] initWithTarget:target action:@selector(longPressed:)];
-            gesture.minimumPressDuration = 0.75;
-            gesture.cancelsTouchesInView = NO;
-            [providerView addGestureRecognizer:gesture];
-            objc_setAssociatedObject(providerView, SPProviderGestureKey, gesture, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        }
-    }
+    SPInstallProviderLongPress(providerView, target);
+    SPInstallProviderLongPress(ispLabel, target);
+    if (ispLabel.superview != providerView) SPInstallProviderLongPress(ispLabel.superview, target);
+    SPInstallProviderHotspot(presenter, providerView, ispLabel, target);
     __weak UIViewController *weakPresenter = presenter;
     __weak id weakHost = hostController;
     SPObserverToken *observer = [SPObserverToken new];
@@ -603,10 +648,10 @@ static void SPFindProviderControlsInView(UIView *view) {
         NSString *className = NSStringFromClass(responder.class);
         if ([className containsString:@"ISPHostController"]) {
             UIStackView *stack = SPObject(responder, NSSelectorFromString(@"assemblyStackView"));
-            if ([stack isKindOfClass:UIStackView.class]) {
-                SPAttachProviderControls(responder, stack);
-                return;
-            }
+            // The provider host is enough to install the row hotspot.  Some
+            // builds expose the stack only after the first layout pass.
+            SPAttachProviderControls(responder, [stack isKindOfClass:UIStackView.class] ? stack : nil);
+            return;
         }
         if ([responder isKindOfClass:UIViewController.class]) break;
     }

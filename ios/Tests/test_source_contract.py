@@ -61,6 +61,15 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("removeTarget:nil action:NULL", TWEAK)
         self.assertIn("removeGestureRecognizer:oldGesture", TWEAK)
 
+    def test_provider_long_press_has_row_hotspot_fallback(self):
+        provider = TWEAK[TWEAK.index("static void SPAttachProviderControls"):TWEAK.index("static BOOL SPIsScopedController")]
+        self.assertIn("SPProviderHotspotTag", TWEAK)
+        self.assertIn("userInteractionEnabled = YES", TWEAK)
+        self.assertIn("SPInstallProviderLongPress(ispLabel", provider)
+        self.assertIn("SPInstallProviderHotspot(presenter, providerView, ispLabel, target)", provider)
+        self.assertIn("alpha = 0.02", TWEAK)
+        self.assertIn("@selector(openControls)", TWEAK)
+
     def test_server_selection_is_not_hooked(self):
         self.assertNotIn("didSelectRowAtIndexPath", TWEAK)
 
