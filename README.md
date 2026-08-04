@@ -62,6 +62,9 @@ python3 Scripts/verify_objc_syntax.py
 See [`docs/OFFLINE_AND_DATA_SAVER.md`](docs/OFFLINE_AND_DATA_SAVER.md) for the
 user-facing behavior, traffic limits, and platform adapter boundaries.
 
+The Android 1.8.9 report-to-fix mapping and verification limits are recorded in
+[`docs/ANDROID_1.8.9_BUGFIXES.md`](docs/ANDROID_1.8.9_BUGFIXES.md).
+
 ## Public releases
 
 The canonical public release page is the
