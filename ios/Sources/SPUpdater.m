@@ -2,7 +2,37 @@
 #import "SPState.h"
 
 static NSString * const SPManifestURL = @"https://speedtest.oliverprojects.tech/api/ota/manifest";
-static NSString * const SPCurrentVersion = @"0.1.11";
+// Keep this in sync with the IPA's CFBundleShortVersionString.  A stale
+// value here makes every current install report its own release as an update.
+static NSString * const SPCurrentVersion = @"0.1.13";
+
+static BOOL SPIsNativeSetupController(UIViewController *controller) {
+    if (!controller) return NO;
+    NSString *name = NSStringFromClass(controller.class).lowercaseString;
+    for (NSString *token in @[@"onboarding", @"educational", @"setup", @"privacy", @"consent", @"welcome", @"permissions"]) {
+        if ([name containsString:token]) return YES;
+    }
+    return NO;
+}
+
+// Update alerts must never be placed above the stock onboarding/privacy
+// controller.  In particular, presenting an alert while that controller's
+// Continue action is visible can swallow the touch and leave setup looking
+// frozen.  Treat every non-dismissing modal as a blocking presentation; this
+// also avoids interrupting a user's unrelated native dialog.
+static BOOL SPHasBlockingPresentation(UIViewController *controller) {
+    UIViewController *cursor = controller;
+    while (cursor) {
+        UIViewController *presented = cursor.presentedViewController;
+        if (presented && !presented.isBeingDismissed) return YES;
+        if (SPIsNativeSetupController(cursor)) return YES;
+        if ([cursor isKindOfClass:UIAlertController.class]) return YES;
+        if ([cursor isKindOfClass:UINavigationController.class]) cursor = ((UINavigationController *)cursor).visibleViewController;
+        else if ([cursor isKindOfClass:UITabBarController.class]) cursor = ((UITabBarController *)cursor).selectedViewController;
+        else break;
+    }
+    return NO;
+}
 
 static UIViewController *SPUpdatePresenter(UIViewController *preferred) {
     UIViewController *controller = preferred;
@@ -22,6 +52,42 @@ static UIViewController *SPUpdatePresenter(UIViewController *preferred) {
     if ([controller isKindOfClass:UINavigationController.class]) controller = ((UINavigationController *)controller).visibleViewController;
     if ([controller isKindOfClass:UITabBarController.class]) controller = ((UITabBarController *)controller).selectedViewController;
     return controller;
+}
+
+static void SPShowUpdateWhenReady(NSString *version, NSURL *downloadURL, UIViewController *preferred, NSInteger attempt) {
+    if (!version.length || !downloadURL || attempt > 20) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIViewController *base = preferred ?: SPUpdatePresenter(nil);
+        UIViewController *presenter = SPUpdatePresenter(base);
+        if (!presenter || SPHasBlockingPresentation(base) || SPHasBlockingPresentation(presenter)) {
+            // Native setup is intentionally allowed to finish first.  Retry
+            // for a bounded period so a slow first launch does not lose the
+            // notification permanently, without creating an endless timer.
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                SPShowUpdateWhenReady(version, downloadURL, preferred, attempt + 1);
+            });
+            return;
+        }
+        // A modal that is already being dismissed is still attached for a
+        // short UIKit transition.  Retry instead of dropping the update or
+        // attempting a presentation into that transition.
+        if (presenter.presentedViewController) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                SPShowUpdateWhenReady(version, downloadURL, preferred, attempt + 1);
+            });
+            return;
+        }
+        if ([SPState.shared.lastPromptedUpdateVersion isEqualToString:version]) return;
+        [SPState.shared setLastPromptedUpdateVersion:version];
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Speedtest+ update available"
+            message:[NSString stringWithFormat:@"Version %@ is ready. iOS updates open the signed download page.", version]
+            preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Later" style:UIAlertActionStyleCancel handler:nil]];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Open download" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+            [UIApplication.sharedApplication openURL:downloadURL options:@{} completionHandler:nil];
+        }]];
+        [presenter presentViewController:alert animated:YES completion:nil];
+    });
 }
 
 @implementation SPUpdater
@@ -49,19 +115,7 @@ static UIViewController *SPUpdatePresenter(UIViewController *preferred) {
         if ([SPState.shared.lastPromptedUpdateVersion isEqualToString:version]) return;
         NSURL *downloadURL = [NSURL URLWithString:download];
         if (![downloadURL.scheme.lowercaseString isEqualToString:@"https"] || !downloadURL.host.length) return;
-        dispatch_async(dispatch_get_main_queue(), ^{
-            UIViewController *presenter = SPUpdatePresenter(viewController);
-            if (!presenter || presenter.presentedViewController) return;
-            [SPState.shared setLastPromptedUpdateVersion:version];
-            UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Speedtest+ update available"
-                message:[NSString stringWithFormat:@"Version %@ is ready. iOS updates open the signed download page.", version]
-                preferredStyle:UIAlertControllerStyleAlert];
-            [alert addAction:[UIAlertAction actionWithTitle:@"Later" style:UIAlertActionStyleCancel handler:nil]];
-            [alert addAction:[UIAlertAction actionWithTitle:@"Open download" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-                [UIApplication.sharedApplication openURL:downloadURL options:@{} completionHandler:nil];
-            }]];
-            [presenter presentViewController:alert animated:YES completion:nil];
-        });
+        SPShowUpdateWhenReady(version, downloadURL, viewController, 0);
     }];
     [task resume];
 }

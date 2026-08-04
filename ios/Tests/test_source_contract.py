@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TWEAK = (ROOT / "Sources" / "Tweak.xm").read_text(encoding="utf-8")
+UPDATER = (ROOT / "Sources" / "SPUpdater.m").read_text(encoding="utf-8")
 THEME = (ROOT / "Sources" / "SPTheme.m").read_text(encoding="utf-8")
 SHARE = (ROOT / "Sources" / "SPShareBuilder.m").read_text(encoding="utf-8")
 CONTROLS = (ROOT / "Sources" / "SPControlsViewController.m").read_text(encoding="utf-8")
@@ -80,6 +81,16 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("!providerButton", TWEAK)
         self.assertIn("SPQueueIntroGuideAttempt(controller, 0)", TWEAK)
         self.assertIn('containsString:@"educational"', TWEAK)
+
+    def test_update_version_matches_current_ipa(self):
+        self.assertIn('SPCurrentVersion = @"0.1.13"', UPDATER)
+
+    def test_update_prompt_defers_to_native_setup_and_existing_modals(self):
+        self.assertIn("SPIsNativeSetupController", UPDATER)
+        self.assertIn("SPHasBlockingPresentation", UPDATER)
+        self.assertIn("SPShowUpdateWhenReady", UPDATER)
+        self.assertIn("attempt > 20", UPDATER)
+        self.assertIn("Continue action is visible", UPDATER)
 
     def test_provider_host_lifecycle_hooks_cover_rebuilt_rows(self):
         for name in ("setHostView:", "setHostNameLabel:", "setHostLocationLabel:"):
