@@ -1224,11 +1224,16 @@ static void HookResultListViewWillAppear(id self, SEL _cmd, BOOL animated) {
 }
 
 static void (*OrigFeedbackViewDidLoad)(id, SEL);
+static void SPRewriteSurveyLabels(UIView *view);
 static void HookFeedbackViewDidLoad(id self, SEL _cmd) {
     OrigFeedbackViewDidLoad(self, _cmd);
     NSString *isp = SPState.shared.active ? [SPState.shared stringForKey:@"isp"] : nil;
     UILabel *title = SPLabel(self, @"titleLabel");
     if (isp.length && title) title.text = [NSString stringWithFormat:@"How would you rate %@?", isp];
+    // The title accessor is private and has changed between releases.  Walk
+    // the rendered feedback surface as well so the comparison prompt is
+    // updated even when the stock label is nested or renamed.
+    SPRewriteSurveyLabels(((UIViewController *)self).view);
     SPApplyThemeToController(self);
 }
 
