@@ -172,6 +172,31 @@ static void SPCollectLabels(UIView *view, NSMutableArray<UILabel *> *labels) {
     for (UIView *child in view.subviews) SPCollectLabels(child, labels);
 }
 
+static BOOL SPLabelIsResultPlaceholder(NSString *text) {
+    NSString *value = [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (!value.length) return NO;
+    return [value isEqualToString:@"-"] || [value isEqualToString:@"\u2014"] ||
+           [value isEqualToString:@"\u2013"] || [value isEqualToString:@"\u2026"] ||
+           [value isEqualToString:@"..."] || [value isEqualToString:@"•••"];
+}
+
+static NSInteger SPResultLabelScore(UILabel *candidate) {
+    if (![candidate isKindOfClass:UILabel.class] || candidate.hidden || candidate.alpha < 0.05) return NSIntegerMin;
+    NSString *text = [candidate.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (!text.length) return NSIntegerMin;
+    NSString *lower = text.lowercaseString;
+    // The result accessor is a stack on some builds. Do not accidentally
+    // write the custom number into a unit, heading, or icon-caption label.
+    for (NSString *excluded in @[@"mbps", @"ms", @"download", @"upload", @"ping", @"jitter", @"packet loss", @"loss"]) {
+        if ([lower isEqualToString:excluded] || [lower containsString:[NSString stringWithFormat:@" %@", excluded]]) return NSIntegerMin;
+    }
+    NSInteger score = (NSInteger)llround(candidate.font.pointSize * 4.0);
+    if ([text rangeOfCharacterFromSet:NSCharacterSet.decimalDigitCharacterSet].location != NSNotFound) score += 1000;
+    else if (SPLabelIsResultPlaceholder(text)) score += 800;
+    else score -= 300;
+    return score;
+}
+
 static UILabel *SPDisplayLabel(id object, NSString *getter) {
     id value = SPObject(object, NSSelectorFromString(getter));
     if ([value isKindOfClass:UILabel.class]) return value;
@@ -179,9 +204,13 @@ static UILabel *SPDisplayLabel(id object, NSString *getter) {
     NSMutableArray<UILabel *> *labels = [NSMutableArray array];
     SPCollectLabels(value, labels);
     UILabel *best = nil;
+    NSInteger bestScore = NSIntegerMin;
     for (UILabel *candidate in labels) {
-        BOOL containsDigit = [candidate.text rangeOfCharacterFromSet:NSCharacterSet.decimalDigitCharacterSet].location != NSNotFound;
-        if (!best || (containsDigit && candidate.font.pointSize > best.font.pointSize)) best = candidate;
+        NSInteger score = SPResultLabelScore(candidate);
+        if (score > bestScore) {
+            best = candidate;
+            bestScore = score;
+        }
     }
     return best;
 }
@@ -208,6 +237,41 @@ static double SPNumberFromLabel(UILabel *label) {
 
 static NSString *SPFormatMbps(double value) {
     return [NSString stringWithFormat:@"%.1f", value];
+}
+
+static void SPApplyResultOverrideLabels(id controller, NSDictionary *result) {
+    if (!controller || ![result isKindOfClass:NSDictionary.class] || !result.count) return;
+    if ([result[@"override_download"] boolValue]) {
+        UILabel *label = SPDisplayLabel(controller, @"downloadResult");
+        if (label) label.text = SPFormatMbps([result[@"download_mbps"] doubleValue]);
+    }
+    if ([result[@"override_upload"] boolValue]) {
+        UILabel *label = SPDisplayLabel(controller, @"uploadResult");
+        if (label) label.text = SPFormatMbps([result[@"upload_mbps"] doubleValue]);
+    }
+    if ([result[@"override_ping"] boolValue]) {
+        UILabel *label = SPDisplayLabel(controller, @"pingResult");
+        if (label) label.text = [result[@"ping_ms"] stringValue];
+    }
+    if ([result[@"override_jitter"] boolValue]) {
+        UILabel *label = SPDisplayLabel(controller, @"jitterResult");
+        if (label) label.text = [result[@"jitter_ms"] stringValue];
+    }
+}
+
+static void SPScheduleFinalResultLabelRepair(id controller, NSDictionary *result) {
+    if (!controller || !result.count) return;
+    __weak id weakController = controller;
+    NSNumber *completion = result[@"completed_at"];
+    for (NSNumber *delay in @[@0.0, @0.08, @0.25, @0.60, @1.20]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            id strongController = weakController;
+            NSDictionary *current = SPState.shared.lastResult;
+            if (!strongController || !current.count ||
+                (completion && ![completion isEqual:current[@"completed_at"]])) return;
+            SPApplyResultOverrideLabels(strongController, current);
+        });
+    }
 }
 
 static void SPApplyLastResultIdentityLabels(id controller, NSDictionary *result);
@@ -897,6 +961,8 @@ static BOOL SPLooksLikeStockSetupController(UIViewController *controller) {
     return NO;
 }
 
+static BOOL SPAlertLooksLikeNativeSetupController(UIViewController *controller);
+
 static BOOL SPHasStockSetupModal(UIViewController *controller) {
     if (!controller) return NO;
     // Check the exact child first; a Swift setup controller can be presented
@@ -907,7 +973,7 @@ static BOOL SPHasStockSetupModal(UIViewController *controller) {
             UIViewController *shown = direct.presentedViewController;
             while (shown) {
                 if (SPLooksLikeStockSetupController(shown)) return YES;
-                if ([shown isKindOfClass:UIAlertController.class]) return YES;
+                if (SPAlertLooksLikeNativeSetupController(shown)) return YES;
                 shown = shown.presentedViewController;
             }
         }
@@ -932,6 +998,19 @@ static BOOL SPTextLooksLikeNativeSetupAction(NSString *text) {
     value = [value stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
     for (NSString *token in @[@"continue", @"get started", @"next", @"allow", @"agree"]) {
         if ([value isEqualToString:token]) return YES;
+    }
+    return NO;
+}
+
+static BOOL SPAlertLooksLikeNativeSetupController(UIViewController *controller) {
+    if (![controller isKindOfClass:UIAlertController.class]) return NO;
+    UIAlertController *alert = (UIAlertController *)controller;
+    NSString *allText = [[NSString stringWithFormat:@"%@ %@", alert.title ?: @"", alert.message ?: @""] lowercaseString];
+    for (NSString *token in @[@"onboarding", @"setup", @"privacy", @"consent", @"permission", @"welcome", @"educational"]) {
+        if ([allText containsString:token]) return YES;
+    }
+    for (UIAlertAction *action in alert.actions) {
+        if (SPTextLooksLikeNativeSetupAction(action.title)) return YES;
     }
     return NO;
 }
@@ -1120,6 +1199,38 @@ static void SPMutateSavedModel(id model, NSDictionary *last) {
     } @catch (__unused NSException *exception) {}
 }
 
+static id SPSavedModelForReport(id owner, id report) {
+    id model = SPKVCValue(report, @"speedTestResult");
+    if (!model) model = SPObject(owner, NSSelectorFromString(@"lastSavedResult"));
+    return model;
+}
+
+// CoreDataManager can hand the report object to its saver before the result
+// model has been attached. Keep the pending customized result alive across a
+// short, bounded window so a native asynchronous save cannot silently restore
+// the dots/placeholders or the measured value.
+static void SPApplyPendingSavedModelEventually(id owner, id report, NSDictionary *pending) {
+    if (!owner || !pending.count) return;
+    __weak id weakOwner = owner;
+    __strong id strongReport = report;
+    __block BOOL applied = NO;
+    void (^attempt)(void) = ^{
+        if (applied) return;
+        id strongOwner = weakOwner;
+        id model = SPSavedModelForReport(strongOwner, strongReport);
+        if (!model) return;
+        SPMutateSavedModel(model, pending);
+        applied = YES;
+        if ([strongOwner respondsToSelector:@selector(save)]) {
+            ((void (*)(id, SEL))objc_msgSend)(strongOwner, @selector(save));
+        }
+    };
+    attempt();
+    for (NSNumber *delay in @[@0.10, @0.35, @0.80, @1.50]) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), attempt);
+    }
+}
+
 static void (*OrigSpeedViewDidLoad)(id, SEL);
 static void HookSpeedViewDidLoad(id self, SEL _cmd) {
     OrigSpeedViewDidLoad(self, _cmd);
@@ -1155,6 +1266,20 @@ static void (*OrigSpeedViewDidLayoutSubviews)(id, SEL);
 static void HookSpeedViewDidLayoutSubviews(id self, SEL _cmd) {
     OrigSpeedViewDidLayoutSubviews(self, _cmd);
     SPAttachProviderControlsAfterLayout((UIViewController *)self);
+    // The stock view can rebuild its result stack during a layout pass. Keep
+    // an active override visible after that rebuild without touching the GO
+    // control or the native test state.
+    if (SPState.shared.testActive) {
+        SPDirection direction = SPState.shared.stage == SPStageUpload ? SPDirectionUpload : SPDirectionDownload;
+        if ([SPState.shared runHasSpeedOverrideForDirection:direction]) {
+            UILabel *label = SPDisplayLabel(self, direction == SPDirectionDownload ? @"downloadResult" : @"uploadResult");
+            if (label) {
+                double measured = SPNumberFromLabel(label);
+                double shown = [SPState.shared displayMbpsForDirection:direction measuredMbps:measured progress:0.0];
+                if (isfinite(shown) && shown >= 0.0) label.text = SPFormatMbps(shown);
+            }
+        }
+    }
 }
 
 static void (*OrigSpeedViewWillAppear)(id, SEL, BOOL);
@@ -1218,11 +1343,53 @@ static void HookSuiteComplete(id self, SEL _cmd) {
     SPCaptureCompletedTest(self);
     OrigSuiteComplete(self, _cmd);
     NSDictionary *last = SPState.shared.lastResult;
-    if ([last[@"override_download"] boolValue]) SPDisplayLabel(self, @"downloadResult").text = SPFormatMbps([last[@"download_mbps"] doubleValue]);
-    if ([last[@"override_upload"] boolValue]) SPDisplayLabel(self, @"uploadResult").text = SPFormatMbps([last[@"upload_mbps"] doubleValue]);
-    if ([last[@"override_ping"] boolValue]) SPDisplayLabel(self, @"pingResult").text = [last[@"ping_ms"] stringValue];
-    if ([last[@"override_jitter"] boolValue]) SPDisplayLabel(self, @"jitterResult").text = [last[@"jitter_ms"] stringValue];
+    SPApplyResultOverrideLabels(self, last);
     SPApplyLastResultIdentityLabels(self, last);
+    SPScheduleFinalResultLabelRepair(self, last);
+}
+
+static void SPRepairLiveResultLabel(id controller, SPDirection direction) {
+    SPState *state = SPState.shared;
+    if (!controller || !state.testActive || ![state runHasSpeedOverrideForDirection:direction]) return;
+    UILabel *label = SPDisplayLabel(controller, direction == SPDirectionDownload ? @"downloadResult" : @"uploadResult");
+    if (!label) return;
+    double measured = SPNumberFromLabel(label);
+    double shown = [state displayMbpsForDirection:direction measuredMbps:measured progress:0.0];
+    if (isfinite(shown) && shown >= 0.0) label.text = SPFormatMbps(shown);
+}
+
+static void (*OrigSetDownloadResult)(id, SEL, id);
+static void HookSetDownloadResult(id self, SEL _cmd, id value) {
+    OrigSetDownloadResult(self, _cmd, value);
+    dispatch_async(dispatch_get_main_queue(), ^{ SPRepairLiveResultLabel(self, SPDirectionDownload); });
+}
+
+static void (*OrigSetUploadResult)(id, SEL, id);
+static void HookSetUploadResult(id self, SEL _cmd, id value) {
+    OrigSetUploadResult(self, _cmd, value);
+    dispatch_async(dispatch_get_main_queue(), ^{ SPRepairLiveResultLabel(self, SPDirectionUpload); });
+}
+
+static void (*OrigSetPingResult)(id, SEL, id);
+static void HookSetPingResult(id self, SEL _cmd, id value) {
+    OrigSetPingResult(self, _cmd, value);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!SPState.shared.testActive) return;
+        NSNumber *ping = [SPState.shared runNumberForKey:@"ping"];
+        UILabel *label = SPDisplayLabel(self, @"pingResult");
+        if (ping && label) label.text = ping.stringValue;
+    });
+}
+
+static void (*OrigSetJitterResult)(id, SEL, id);
+static void HookSetJitterResult(id self, SEL _cmd, id value) {
+    OrigSetJitterResult(self, _cmd, value);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (!SPState.shared.testActive) return;
+        NSNumber *jitter = [SPState.shared runNumberForKey:@"jitter"];
+        UILabel *label = SPDisplayLabel(self, @"jitterResult");
+        if (jitter && label) label.text = jitter.stringValue;
+    });
 }
 
 static void (*OrigGaugeBegin)(id, SEL, id, id);
@@ -1393,14 +1560,10 @@ static id HookCSVFileActivityItem(id self, SEL _cmd, id controller, id activityT
 
 static void (*OrigSaveReportAsResult)(id, SEL, id);
 static void HookSaveReportAsResult(id self, SEL _cmd, id report) {
-    OrigSaveReportAsResult(self, _cmd, report);
-    id localResult = SPKVCValue(report, @"speedTestResult");
-    if (!localResult) localResult = SPObject(self, NSSelectorFromString(@"lastSavedResult"));
-    if (!localResult) return;
     NSDictionary *pending = [SPState.shared consumePendingLocalResult];
+    OrigSaveReportAsResult(self, _cmd, report);
     if (!pending) return;
-    SPMutateSavedModel(localResult, pending);
-    if (localResult && [self respondsToSelector:@selector(save)]) ((void (*)(id, SEL))objc_msgSend)(self, @selector(save));
+    SPApplyPendingSavedModelEventually(self, report, pending);
 }
 
 static void SPHook(Class cls, NSString *selectorName, IMP replacement, IMP *original) {
@@ -1424,6 +1587,10 @@ __attribute__((constructor)) static void SpeedtestPlusInitialize(void) {
         SPHook(speed, @"handleLoadedLatencyProgress:", (IMP)HookHandleLoadedLatency, (IMP *)&OrigHandleLoadedLatency);
         SPHook(speed, @"handleCompletion:", (IMP)HookHandleCompletion, (IMP *)&OrigHandleCompletion);
         SPHook(speed, @"suiteComplete", (IMP)HookSuiteComplete, (IMP *)&OrigSuiteComplete);
+        SPHook(speed, @"setDownloadResult:", (IMP)HookSetDownloadResult, (IMP *)&OrigSetDownloadResult);
+        SPHook(speed, @"setUploadResult:", (IMP)HookSetUploadResult, (IMP *)&OrigSetUploadResult);
+        SPHook(speed, @"setPingResult:", (IMP)HookSetPingResult, (IMP *)&OrigSetPingResult);
+        SPHook(speed, @"setJitterResult:", (IMP)HookSetJitterResult, (IMP *)&OrigSetJitterResult);
         SPHook(speed, @"canShowAdForAdView:", (IMP)HookCanShowAd, (IMP *)&OrigCanShowAd);
 
         Class gauge = NSClassFromString(@"_TtC5Gauge22GaugeViewControlleriOS");

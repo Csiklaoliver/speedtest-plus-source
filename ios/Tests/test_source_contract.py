@@ -234,6 +234,33 @@ class SourceContractTests(unittest.TestCase):
                       TWEAK.index("static void (*OrigHandleProgress)")]
         self.assertIn("SPScheduleLiveLabelFallback(self, direction)", stage)
 
+    def test_result_placeholders_do_not_capture_unit_labels(self):
+        self.assertIn("SPLabelIsResultPlaceholder", TWEAK)
+        self.assertIn("SPResultLabelScore", TWEAK)
+        self.assertIn('containsString:[NSString stringWithFormat:@" %@", excluded]', TWEAK)
+        self.assertIn("SPApplyResultOverrideLabels", TWEAK)
+        self.assertIn("SPScheduleFinalResultLabelRepair", TWEAK)
+
+    def test_native_result_setters_repair_custom_values(self):
+        for selector in ("setDownloadResult:", "setUploadResult:", "setPingResult:", "setJitterResult:"):
+            self.assertIn(f'SPHook(speed, @"{selector}"', TWEAK)
+        self.assertIn("SPRepairLiveResultLabel", TWEAK)
+
+    def test_controls_close_after_successful_apply(self):
+        self.assertIn("closeAfterSettingsChange", CONTROLS)
+        self.assertIn("dismissViewControllerAnimated:YES completion", CONTROLS)
+        self.assertIn("UIAccessibilityAnnouncementNotification", CONTROLS)
+
+    def test_unrelated_custom_alerts_do_not_count_as_native_setup(self):
+        self.assertIn("SPAlertLooksLikeNativeSetupController", TWEAK)
+        self.assertIn("SPTextLooksLikeNativeSetupAction(action.title)", TWEAK)
+        self.assertIn("if (SPAlertLooksLikeNativeSetupController(shown))", TWEAK)
+
+    def test_saved_result_mutation_retries_when_model_is_attached_late(self):
+        self.assertIn("SPApplyPendingSavedModelEventually", TWEAK)
+        self.assertIn("SPSavedModelForReport", TWEAK)
+        self.assertIn("@0.10", TWEAK)
+
     def test_theme_repaints_generic_core_surfaces(self):
         self.assertIn('containsString:@"Speed"', THEME)
         self.assertIn('containsString:@"Compare"', THEME)

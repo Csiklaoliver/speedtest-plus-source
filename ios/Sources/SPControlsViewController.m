@@ -429,16 +429,34 @@
     });
 }
 
+- (void)closeAfterSettingsChange:(NSString *)announcement {
+    UIViewController *host = self.navigationController.presentingViewController;
+    [self.navigationController dismissViewControllerAnimated:YES completion:^{
+        if ([host isKindOfClass:UIViewController.class]) {
+            [host.view setNeedsLayout];
+            [host.view layoutIfNeeded];
+        }
+        if (announcement.length) UIAccessibilityPostNotification(UIAccessibilityAnnouncementNotification, announcement);
+    }];
+}
+
 - (void)apply {
     [self dismissKeyboard];
     NSString *error = nil;
     NSDictionary *configuration = [self validatedConfigurationWithError:&error];
     if (!configuration) { [self showMessage:error ?: @"The settings could not be applied."]; return; }
     [SPState.shared applyConfiguration:configuration];
-    [self showMessage:@"Settings applied. Start a new test to use them."];
+    // Return to the native gauge immediately. Leaving the controls sheet and
+    // its confirmation alert stacked over the gauge made the stock GO button
+    // appear to disappear on iPhone-sized form sheets.
+    [self closeAfterSettingsChange:@"Settings applied. Start a new test to use them."];
 }
 
-- (void)disableAll { [self dismissKeyboard]; [SPState.shared disableAll]; [self showMessage:@"All overrides are disabled."]; }
+- (void)disableAll {
+    [self dismissKeyboard];
+    [SPState.shared disableAll];
+    [self closeAfterSettingsChange:@"All overrides are disabled."];
+}
 - (void)close { [self dismissViewControllerAnimated:YES completion:nil]; }
 
 - (void)offlineSwitchChanged:(UISwitch *)sender {
