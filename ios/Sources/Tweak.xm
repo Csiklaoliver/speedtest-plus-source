@@ -517,6 +517,13 @@ static UIViewController *SPViewControllerForView(UIView *view) {
     return SPPresenter(nil);
 }
 
+// The stock first-run controller is allowed to own the permission flow.  A
+// few Speedtest builds load the page from a nib before its Swift target/action
+// connection is restored, which leaves the visible Continue/Next button
+// tappable but inert.  Repair only that native action when it is missing; do
+// not synthesize a permission grant or replace the system consent dialog.
+static void SPRepairNativeSetupControls(UIViewController *controller);
+
 static void SPApplyLabelOverride(UILabel *label, NSString *override, BOOL active) {
     if (!label) return;
     NSString *original = objc_getAssociatedObject(label, SPOriginalLabelTextKey);
@@ -585,6 +592,41 @@ static void SPInstallProviderLongPress(UIView *view, SPActionTarget *target) {
     gesture.cancelsTouchesInView = NO;
     [view addGestureRecognizer:gesture];
     objc_setAssociatedObject(view, SPProviderGestureKey, gesture, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+static void SPRemoveCustomGestures(UIView *view) {
+    if (![view isKindOfClass:UIView.class]) return;
+    UILongPressGestureRecognizer *gesture = objc_getAssociatedObject(view, SPProviderGestureKey);
+    if (gesture) {
+        [view removeGestureRecognizer:gesture];
+        objc_setAssociatedObject(view, SPProviderGestureKey, nil, OBJC_ASSOCIATION_ASSIGN);
+    }
+    for (UIView *child in [view.subviews copy]) SPRemoveCustomGestures(child);
+}
+
+static void SPRemoveCustomViewsWithTag(UIView *view, NSInteger tag) {
+    if (![view isKindOfClass:UIView.class]) return;
+    for (UIView *child in [view.subviews copy]) {
+        if (child.tag == tag) [child removeFromSuperview];
+        else SPRemoveCustomViewsWithTag(child, tag);
+    }
+}
+
+// A native setup sheet may be presented a moment after the speed controller's
+// first layout pass. Remove every custom surface that may have been attached
+// during that race so Continue remains the only interactive setup action. The
+// normal provider-row button is recreated by the existing layout retry after
+// the native sheet is dismissed.
+static void SPRemoveCustomSurfacesForNativeSetup(UIViewController *controller) {
+    if (![controller isKindOfClass:UIViewController.class] || !controller.view) return;
+    SPRemoveCustomViewsWithTag(controller.view, SPButtonTag);
+    SPRemoveCustomViewsWithTag(controller.view, SPBadgeTag);
+    SPRemoveCustomViewsWithTag(controller.view, SPProviderHotspotTag);
+    SPRemoveCustomGestures(controller.view);
+    objc_setAssociatedObject(controller, SPActionTargetKey, nil, OBJC_ASSOCIATION_ASSIGN);
+    objc_setAssociatedObject(controller, SPProviderFallbackTargetKey, nil, OBJC_ASSOCIATION_ASSIGN);
+    SPRepairNativeSetupControls(SPTopController(controller) ?: controller);
+    [controller.view setNeedsLayout];
 }
 
 static UIButton *SPInstallProviderHotspot(UIViewController *presenter, UIView *providerView, UILabel *ispLabel, SPActionTarget *target) {
@@ -788,7 +830,10 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
     if (![ispView isKindOfClass:UIView.class]) return;
     UIViewController *presenter = SPViewControllerForView(ispView);
     if (!presenter) return;
-    if (SPHasNativeSetupSurface(presenter)) return;
+    if (SPHasNativeSetupSurface(presenter)) {
+        SPRemoveCustomSurfacesForNativeSetup(presenter);
+        return;
+    }
     [SPConnectionHealth noteNativeServerListReady:YES];
 
     UIButton *existing = [presenter.view viewWithTag:SPButtonTag];
@@ -1002,6 +1047,51 @@ static BOOL SPTextLooksLikeNativeSetupAction(NSString *text) {
     return NO;
 }
 
+static void SPRepairNativeSetupControlsInView(UIView *view, UIViewController *fallbackController) {
+    if (![view isKindOfClass:UIView.class] || view.hidden || view.alpha < 0.01) return;
+    if ([view isKindOfClass:UIButton.class]) {
+        UIButton *button = (UIButton *)view;
+        NSString *title = [button titleForState:UIControlStateNormal];
+        if (!title.length) title = [button titleForState:UIControlStateSelected];
+        if (!title.length) title = button.accessibilityLabel;
+        if (SPTextLooksLikeNativeSetupAction(title)) {
+            UIViewController *owner = SPViewControllerForView(button) ?: fallbackController;
+            SEL action = [title.lowercaseString containsString:@"next"]
+                ? @selector(didClickNext:)
+                : @selector(didClickContinue:);
+            if ([owner respondsToSelector:action]) {
+                BOOL hasTouchAction = NO;
+                for (id target in button.allTargets) {
+                    if ([button actionsForTarget:target forControlEvent:UIControlEventTouchUpInside].count) {
+                        hasTouchAction = YES;
+                        break;
+                    }
+                }
+                if (!hasTouchAction) {
+                    [button addTarget:owner
+                               action:action
+                     forControlEvents:(UIControlEventTouchUpInside | UIControlEventPrimaryActionTriggered)];
+                }
+                // Keep the native page usable if an earlier custom layout
+                // pass accidentally left the stock control disabled.
+                button.hidden = NO;
+                button.enabled = YES;
+                button.userInteractionEnabled = YES;
+                button.accessibilityTraits &= ~UIAccessibilityTraitNotEnabled;
+            }
+        }
+    }
+    for (UIView *child in [view.subviews copy]) SPRepairNativeSetupControlsInView(child, fallbackController);
+}
+
+static void SPRepairNativeSetupControls(UIViewController *controller) {
+    if (![controller isKindOfClass:UIViewController.class] || !controller.view) return;
+    SPRepairNativeSetupControlsInView(controller.view, controller);
+    for (UIViewController *child in [controller.childViewControllers copy]) {
+        SPRepairNativeSetupControls(child);
+    }
+}
+
 static BOOL SPAlertLooksLikeNativeSetupController(UIViewController *controller) {
     if (![controller isKindOfClass:UIAlertController.class]) return NO;
     UIAlertController *alert = (UIAlertController *)controller;
@@ -1038,9 +1128,19 @@ static BOOL SPHasNativeSetupSurface(UIViewController *controller) {
 }
 
 static void SPInstallSpeedEnhancementsWhenReady(UIViewController *controller, NSInteger attempt) {
-    if (![controller isKindOfClass:UIViewController.class] || attempt > 24) return;
+    if (![controller isKindOfClass:UIViewController.class] || attempt > 80) return;
     __weak UIViewController *weakController = controller;
+    if (attempt == 0) {
+        // Let the stock setup controller finish its first presentation before
+        // any Speedtest+ view, badge, theme, or updater can be attached.
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            UIViewController *strongController = weakController;
+            if (strongController) SPInstallSpeedEnhancementsWhenReady(strongController, 1);
+        });
+        return;
+    }
     if (SPHasNativeSetupSurface(controller) || controller.presentedViewController) {
+        if (SPHasNativeSetupSurface(controller)) SPRemoveCustomSurfacesForNativeSetup(controller);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.75 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             UIViewController *strongController = weakController;
             if (strongController) SPInstallSpeedEnhancementsWhenReady(strongController, attempt + 1);
@@ -1072,7 +1172,10 @@ static void SPQueueIntroGuideAttempt(UIViewController *controller, NSInteger att
 
 static void SPAttachProviderControlsAfterLayout(UIViewController *controller) {
     if (![controller isKindOfClass:UIViewController.class]) return;
-    if (SPHasNativeSetupSurface(controller)) return;
+    if (SPHasNativeSetupSurface(controller)) {
+        SPRemoveCustomSurfacesForNativeSetup(controller);
+        return;
+    }
     // Do not treat any existing tag as proof that the button is still on the
     // current provider row.  iOS rebuilds that row after server selection;
     // the old button can remain on the controller while the visible row has
@@ -1558,6 +1661,68 @@ static id HookCSVFileActivityItem(id self, SEL _cmd, id controller, id activityT
     return SPRewriteCSVFile(OrigCSVFileActivityItem(self, _cmd, controller, activityType));
 }
 
+static BOOL SPOwnsInstanceMethod(Class cls, SEL selector) {
+    if (!cls || !selector) return NO;
+    unsigned int count = 0;
+    Method *methods = class_copyMethodList(cls, &count);
+    BOOL owns = NO;
+    for (unsigned int index = 0; index < count; index++) {
+        if (method_getName(methods[index]) == selector) {
+            owns = YES;
+            break;
+        }
+    }
+    free(methods);
+    return owns;
+}
+
+// Unlike the historical hook helper, this variant never changes an inherited
+// UIViewController implementation globally.  If an onboarding page inherits
+// viewDidAppear/viewDidLayoutSubviews, add a class-local override and call the
+// superclass implementation captured here.
+static void SPHookLocal(Class cls, NSString *selectorName, IMP replacement, IMP *original) {
+    if (!cls) return;
+    SEL selector = NSSelectorFromString(selectorName);
+    Method inherited = class_getInstanceMethod(cls, selector);
+    if (!inherited) return;
+    IMP current = method_getImplementation(inherited);
+    if (SPOwnsInstanceMethod(cls, selector)) {
+        if (original) *original = current;
+        method_setImplementation(inherited, replacement);
+        return;
+    }
+    const char *types = method_getTypeEncoding(inherited);
+    IMP superclassImplementation = class_getMethodImplementation(class_getSuperclass(cls), selector);
+    if (class_addMethod(cls, selector, replacement, types) && original) *original = superclassImplementation;
+}
+
+static void (*OrigOnboardingPage1DidLoad)(id, SEL);
+static void HookOnboardingPage1DidLoad(id self, SEL _cmd) {
+    if (OrigOnboardingPage1DidLoad) OrigOnboardingPage1DidLoad(self, _cmd);
+    SPRepairNativeSetupControls((UIViewController *)self);
+    dispatch_async(dispatch_get_main_queue(), ^{ SPRepairNativeSetupControls((UIViewController *)self); });
+}
+
+static void (*OrigOnboardingPage2DidLoad)(id, SEL);
+static void HookOnboardingPage2DidLoad(id self, SEL _cmd) {
+    if (OrigOnboardingPage2DidLoad) OrigOnboardingPage2DidLoad(self, _cmd);
+    SPRepairNativeSetupControls((UIViewController *)self);
+    dispatch_async(dispatch_get_main_queue(), ^{ SPRepairNativeSetupControls((UIViewController *)self); });
+}
+
+static void (*OrigOnboardingViewDidLoad)(id, SEL);
+static void HookOnboardingViewDidLoad(id self, SEL _cmd) {
+    if (OrigOnboardingViewDidLoad) OrigOnboardingViewDidLoad(self, _cmd);
+    SPRepairNativeSetupControls((UIViewController *)self);
+    dispatch_async(dispatch_get_main_queue(), ^{ SPRepairNativeSetupControls((UIViewController *)self); });
+}
+
+static void (*OrigOnboardingViewDidAppear)(id, SEL, BOOL);
+static void HookOnboardingViewDidAppear(id self, SEL _cmd, BOOL animated) {
+    if (OrigOnboardingViewDidAppear) OrigOnboardingViewDidAppear(self, _cmd, animated);
+    SPRepairNativeSetupControls((UIViewController *)self);
+}
+
 static void (*OrigSaveReportAsResult)(id, SEL, id);
 static void HookSaveReportAsResult(id self, SEL _cmd, id report) {
     NSDictionary *pending = [SPState.shared consumePendingLocalResult];
@@ -1602,6 +1767,18 @@ __attribute__((constructor)) static void SpeedtestPlusInitialize(void) {
         SPHook(provider, @"setHostView:", (IMP)HookSetHostView, (IMP *)&OrigSetHostView);
         SPHook(provider, @"setHostNameLabel:", (IMP)HookSetHostNameLabel, (IMP *)&OrigSetHostNameLabel);
         SPHook(provider, @"setHostLocationLabel:", (IMP)HookSetHostLocationLabel, (IMP *)&OrigSetHostLocationLabel);
+
+        // Keep the stock optional-permission onboarding intact, but repair a
+        // missing Continue/Next target on builds where the nib/Swift outlet
+        // connection is lost.  This lets users proceed without granting
+        // optional permissions and never fabricates an OS permission result.
+        Class onboardingPage1 = NSClassFromString(@"_TtC9SpeedTest29OnboardingPage1ViewController");
+        SPHookLocal(onboardingPage1, @"viewDidLoad", (IMP)HookOnboardingPage1DidLoad, (IMP *)&OrigOnboardingPage1DidLoad);
+        Class onboardingPage2 = NSClassFromString(@"_TtC9SpeedTest29OnboardingPage2ViewController");
+        SPHookLocal(onboardingPage2, @"viewDidLoad", (IMP)HookOnboardingPage2DidLoad, (IMP *)&OrigOnboardingPage2DidLoad);
+        Class onboarding = NSClassFromString(@"_TtC9SpeedTest24OnboardingViewController");
+        SPHookLocal(onboarding, @"viewDidLoad", (IMP)HookOnboardingViewDidLoad, (IMP *)&OrigOnboardingViewDidLoad);
+        SPHookLocal(onboarding, @"viewDidAppear:", (IMP)HookOnboardingViewDidAppear, (IMP *)&OrigOnboardingViewDidAppear);
 
         Class details = NSClassFromString(@"_TtC9SpeedTest27ResultDetailsViewController");
         SPHook(details, @"viewDidLoad", (IMP)HookResultDetailsViewDidLoad, (IMP *)&OrigGenericViewDidLoad);

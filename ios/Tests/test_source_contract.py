@@ -90,15 +90,15 @@ class SourceContractTests(unittest.TestCase):
 
     def test_native_setup_blocks_every_custom_speed_surface(self):
         provider = TWEAK[TWEAK.index("static void SPAttachProviderControls"):TWEAK.index("static void SPFindProviderControlsInView")]
-        self.assertIn("if (SPHasNativeSetupSurface(presenter)) return;", provider)
+        self.assertIn("if (SPHasNativeSetupSurface(presenter))", provider)
         layout = TWEAK[TWEAK.index("static void SPAttachProviderControlsAfterLayout"):TWEAK.index("static BOOL SPIsScopedController")]
-        self.assertIn("if (SPHasNativeSetupSurface(controller)) return;", layout)
+        self.assertIn("if (SPHasNativeSetupSurface(controller))", layout)
         badge = TWEAK[TWEAK.index("static void SPRefreshBadge"):TWEAK.index("static BOOL SPViewIsDescendantOf")]
         self.assertIn("if (SPHasNativeSetupSurface(controller)) return;", badge)
         self.assertIn("if (!SPHasNativeSetupSurface((UIViewController *)self))", TWEAK)
 
     def test_update_version_matches_current_ipa(self):
-        self.assertIn('SPCurrentVersion = @"0.1.17"', UPDATER)
+        self.assertIn('SPCurrentVersion = @"0.1.18"', UPDATER)
 
     def test_update_prompt_defers_to_native_setup_and_existing_modals(self):
         self.assertIn("SPIsNativeSetupController", UPDATER)
@@ -255,6 +255,25 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("SPAlertLooksLikeNativeSetupController", TWEAK)
         self.assertIn("SPTextLooksLikeNativeSetupAction(action.title)", TWEAK)
         self.assertIn("if (SPAlertLooksLikeNativeSetupController(shown))", TWEAK)
+
+    def test_native_setup_removes_custom_surfaces_and_retries_after_continue(self):
+        self.assertIn("SPRemoveCustomSurfacesForNativeSetup", TWEAK)
+        self.assertIn("SPRemoveCustomGestures", TWEAK)
+        self.assertIn("SPProviderHotspotTag", TWEAK)
+        self.assertIn("if (SPHasNativeSetupSurface(presenter))", TWEAK)
+        self.assertIn("if (SPHasNativeSetupSurface(controller)) SPRemoveCustomSurfacesForNativeSetup(controller)", TWEAK)
+        self.assertIn("attempt > 80", TWEAK)
+        self.assertIn("0.35 * NSEC_PER_SEC", TWEAK)
+
+    def test_native_optional_setup_continue_is_repaired_without_granting_permissions(self):
+        self.assertIn("SPRepairNativeSetupControls", TWEAK)
+        self.assertIn("didClickContinue:", TWEAK)
+        self.assertIn("didClickNext:", TWEAK)
+        self.assertIn("UIControlEventTouchUpInside", TWEAK)
+        self.assertIn("SPHookLocal", TWEAK)
+        self.assertIn("OnboardingPage2ViewController", TWEAK)
+        self.assertIn("OnboardingViewController", TWEAK)
+        self.assertIn("never fabricates an OS permission result", TWEAK)
 
     def test_saved_result_mutation_retries_when_model_is_attached_late(self):
         self.assertIn("SPApplyPendingSavedModelEventually", TWEAK)
