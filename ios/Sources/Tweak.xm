@@ -16,13 +16,21 @@ static const NSInteger SPStageDownload = 2;
 static const NSInteger SPStageUpload = 3;
 static const NSInteger SPButtonTag = 0x53505031;
 static const NSInteger SPBadgeTag = 0x53505032;
+// The original 0.1.0 working build placed the S+ entry point above the
+// bottom safe area. Keep the provider-row tags separate so an upgrade from a
+// newer build can hide its old row button without confusing it with the new
+// bottom affordance.
+static const NSInteger SPBottomButtonTag = 0x53505034;
+static const NSInteger SPBottomBadgeTag = 0x53505035;
 // A transparent, non-accessibility fallback target stays in the provider row
 // when the private ISP view drops or swallows long-press gestures.  It is not
 // a floating control and is never added to the gauge or navigation bar.
 static const NSInteger SPProviderHotspotTag = 0x53505033;
 static const void *SPObserverTokenKey = &SPObserverTokenKey;
+static const void *SPBottomObserverTokenKey = &SPBottomObserverTokenKey;
 static const void *SPProviderLayoutRetryKey = &SPProviderLayoutRetryKey;
 static const void *SPProviderFallbackTargetKey = &SPProviderFallbackTargetKey;
+static const void *SPBottomActionTargetKey = &SPBottomActionTargetKey;
 
 static id SPObject(id object, SEL selector);
 
@@ -553,19 +561,25 @@ static void SPApplyProviderLabels(id hostController) {
 static void SPRefreshBadge(UIViewController *controller) {
     if (![controller isKindOfClass:UIViewController.class]) return;
     if (SPHasNativeSetupSurface(controller)) return;
-    UIButton *button = [controller.view viewWithTag:SPButtonTag];
-    UILabel *badge = [controller.view viewWithTag:SPBadgeTag];
+    UIButton *button = [controller.view viewWithTag:SPBottomButtonTag];
+    UILabel *badge = [controller.view viewWithTag:SPBottomBadgeTag];
+    if (!button) button = [controller.view viewWithTag:SPButtonTag];
+    if (!badge) badge = [controller.view viewWithTag:SPBadgeTag];
     NSInteger count = SPState.shared.activeOverrideCount;
     // Keep the Speedtest+ affordance present even when the panel is locked.
     // Hiding it made the password-protected mode impossible to rediscover on
     // builds where the provider long-press was swallowed by a private view.
-    button.hidden = NO;
-    if (button) [SPTheme applyFunctionalMaterialToView:button theme:[SPTheme themeAtIndex:SPState.shared.themeIndex]];
-    button.accessibilityHint = SPState.shared.panelHidden
-        ? @"Unlocks the password-protected Speedtest+ controls"
-        : @"Opens the Speedtest+ guide and controls";
-    badge.hidden = count == 0 || SPState.shared.panelHidden;
-    badge.text = [NSString stringWithFormat:@"CUSTOM \u2022 %ld", (long)count];
+    if (button) {
+        button.hidden = NO;
+        [SPTheme applyFunctionalMaterialToView:button theme:[SPTheme themeAtIndex:SPState.shared.themeIndex]];
+        button.accessibilityHint = SPState.shared.panelHidden
+            ? @"Unlocks the password-protected Speedtest+ controls"
+            : @"Opens the Speedtest+ guide and controls";
+    }
+    if (badge) {
+        badge.hidden = count == 0 || SPState.shared.panelHidden;
+        badge.text = [NSString stringWithFormat:@"CUSTOM \u2022 %ld", (long)count];
+    }
 }
 
 static BOOL SPViewIsDescendantOf(UIView *view, UIView *ancestor) {
@@ -621,9 +635,13 @@ static void SPRemoveCustomSurfacesForNativeSetup(UIViewController *controller) {
     if (![controller isKindOfClass:UIViewController.class] || !controller.view) return;
     SPRemoveCustomViewsWithTag(controller.view, SPButtonTag);
     SPRemoveCustomViewsWithTag(controller.view, SPBadgeTag);
+    SPRemoveCustomViewsWithTag(controller.view, SPBottomButtonTag);
+    SPRemoveCustomViewsWithTag(controller.view, SPBottomBadgeTag);
     SPRemoveCustomViewsWithTag(controller.view, SPProviderHotspotTag);
     SPRemoveCustomGestures(controller.view);
     objc_setAssociatedObject(controller, SPActionTargetKey, nil, OBJC_ASSOCIATION_ASSIGN);
+    objc_setAssociatedObject(controller, SPBottomActionTargetKey, nil, OBJC_ASSOCIATION_ASSIGN);
+    objc_setAssociatedObject(controller, SPBottomObserverTokenKey, nil, OBJC_ASSOCIATION_ASSIGN);
     objc_setAssociatedObject(controller, SPProviderFallbackTargetKey, nil, OBJC_ASSOCIATION_ASSIGN);
     SPRepairNativeSetupControls(SPTopController(controller) ?: controller);
     [controller.view setNeedsLayout];
@@ -790,10 +808,25 @@ static UIButton *SPInstallFallbackProviderButton(UIViewController *controller, U
 }
 
 static void SPAttachFallbackProviderControls(UIViewController *controller) {
-    if (![controller isKindOfClass:UIViewController.class] || [controller.view viewWithTag:SPButtonTag]) return;
+    if (![controller isKindOfClass:UIViewController.class]) return;
     if (SPHasNativeSetupSurface(controller)) return;
     UILabel *label = SPFallbackProviderLabel(controller);
     if (!label) return;
+    // The current entry point is the bottom S+ button.  Keep the provider row
+    // long-press/hotspot as a deliberately invisible fallback, but do not add
+    // a second visible info icon beside the ISP label.
+    if ([controller.view viewWithTag:SPBottomButtonTag]) {
+        UIView *row = label.superview;
+        SPActionTarget *target = [SPActionTarget new];
+        target.presenter = controller;
+        objc_setAssociatedObject(controller, SPProviderFallbackTargetKey, target, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        if ([row isKindOfClass:UIView.class]) {
+            SPInstallProviderLongPress(row, target);
+            SPInstallProviderHotspot(controller, row, label, target);
+        }
+        return;
+    }
+    if ([controller.view viewWithTag:SPButtonTag]) return;
     SPInstallFallbackProviderButton(controller, label);
 }
 
@@ -808,13 +841,88 @@ static void SPRemoveLegacyFloatingControls(UIViewController *controller) {
     if (badge && badge.superview == controller.view) [badge removeFromSuperview];
 }
 
+// Recreate the compact S+ affordance from the original 0.1.0 working build,
+// but anchor it to the safe-area bottom instead of the provider row.  This is
+// a separate tag so upgrades can hide/remove an older provider-row button
+// without ever treating the new bottom button as a native server control.
+static UIButton *SPInstallBottomControlsButton(UIViewController *controller) {
+    if (![controller isKindOfClass:UIViewController.class] || !controller.view ||
+        SPHasNativeSetupSurface(controller)) return nil;
+
+    SPActionTarget *target = objc_getAssociatedObject(controller, SPBottomActionTargetKey);
+    if (![target isKindOfClass:SPActionTarget.class]) {
+        target = [SPActionTarget new];
+        target.presenter = controller;
+        objc_setAssociatedObject(controller, SPBottomActionTargetKey, target, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    } else {
+        target.presenter = controller;
+    }
+
+    UIButton *button = [controller.view viewWithTag:SPBottomButtonTag];
+    if (![button isKindOfClass:UIButton.class]) {
+        button = [UIButton buttonWithType:UIButtonTypeSystem];
+        button.tag = SPBottomButtonTag;
+        button.translatesAutoresizingMaskIntoConstraints = NO;
+        [button setTitle:@"S+  i" forState:UIControlStateNormal];
+        button.titleLabel.font = [UIFont boldSystemFontOfSize:15.0];
+        button.accessibilityLabel = @"Open Speedtest+ information and controls";
+        button.backgroundColor = [UIColor colorWithWhite:0 alpha:0.50];
+        button.layer.cornerRadius = 12.0;
+        button.clipsToBounds = NO;
+        [controller.view addSubview:button];
+        [NSLayoutConstraint activateConstraints:@[
+            [button.trailingAnchor constraintEqualToAnchor:controller.view.safeAreaLayoutGuide.trailingAnchor constant:-12.0],
+            [button.bottomAnchor constraintEqualToAnchor:controller.view.safeAreaLayoutGuide.bottomAnchor constant:-70.0],
+            [button.widthAnchor constraintGreaterThanOrEqualToConstant:48.0],
+            [button.heightAnchor constraintEqualToConstant:48.0]
+        ]];
+    }
+    [button removeTarget:nil action:NULL forControlEvents:UIControlEventTouchUpInside];
+    [button addTarget:target action:@selector(openGuide) forControlEvents:UIControlEventTouchUpInside];
+    [SPTheme applyFunctionalMaterialToView:button theme:[SPTheme themeAtIndex:SPState.shared.themeIndex]];
+
+    UILabel *badge = [controller.view viewWithTag:SPBottomBadgeTag];
+    if (![badge isKindOfClass:UILabel.class]) {
+        badge = [UILabel new];
+        badge.tag = SPBottomBadgeTag;
+        badge.translatesAutoresizingMaskIntoConstraints = NO;
+        badge.font = [UIFont boldSystemFontOfSize:10.0];
+        badge.textColor = UIColor.whiteColor;
+        badge.backgroundColor = [UIColor colorWithWhite:0 alpha:0.60];
+        badge.layer.cornerRadius = 8.0;
+        badge.layer.masksToBounds = YES;
+        badge.textAlignment = NSTextAlignmentCenter;
+        [button addSubview:badge];
+        [NSLayoutConstraint activateConstraints:@[
+            [badge.centerXAnchor constraintEqualToAnchor:button.centerXAnchor],
+            [badge.bottomAnchor constraintEqualToAnchor:button.topAnchor constant:-5.0],
+            [badge.widthAnchor constraintGreaterThanOrEqualToConstant:68.0],
+            [badge.heightAnchor constraintEqualToConstant:18.0]
+        ]];
+    } else if (badge.superview != button) {
+        [badge removeFromSuperview];
+        [button addSubview:badge];
+    }
+
+    if (!objc_getAssociatedObject(controller, SPBottomObserverTokenKey)) {
+        __weak UIViewController *weakController = controller;
+        SPObserverToken *observer = [SPObserverToken new];
+        observer.token = [[NSNotificationCenter defaultCenter] addObserverForName:SPStateDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *note) {
+            UIViewController *strongController = weakController;
+            if (strongController && !SPHasNativeSetupSurface(strongController)) SPRefreshBadge(strongController);
+        }];
+        objc_setAssociatedObject(controller, SPBottomObserverTokenKey, observer, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    SPRefreshBadge(controller);
+    return button;
+}
+
 static void SPAttachControls(UIViewController *controller) {
-    // The info affordance is intentionally attached to the ISP row by
-    // SPAttachProviderControls. Keep this hook only as a migration cleanup for
-    // already-loaded screens from an older dylib. There is deliberately no
-    // floating or navigation-bar S+ control here; the ISP row is the sole
-    // controls entry point, matching the Android layout.
+    // The first working 0.1.0 build used a compact S+ button above the bottom
+    // safe area. Restore that placement while leaving the provider long-press
+    // and native provider/server taps untouched.
     SPRemoveLegacyFloatingControls(controller);
+    SPInstallBottomControlsButton(controller);
 }
 
 static void SPAttachProviderControls(id hostController, UIStackView *stack) {
@@ -835,6 +943,34 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
         return;
     }
     [SPConnectionHealth noteNativeServerListReady:YES];
+
+    UIButton *bottomButton = [presenter.view viewWithTag:SPBottomButtonTag];
+    if (bottomButton) {
+        // A user upgrading from 0.1.17 can still have the old visible row
+        // button in the hierarchy. Hide that legacy affordance and keep the
+        // single S+ entry point at the bottom of the screen.
+        UIButton *legacyProviderButton = [presenter.view viewWithTag:SPButtonTag];
+        if (legacyProviderButton &&
+            (SPViewIsDescendantOf(legacyProviderButton, ispView) ||
+             SPViewIsDescendantOf(legacyProviderButton, stack))) {
+            legacyProviderButton.hidden = YES;
+            legacyProviderButton.accessibilityElementsHidden = YES;
+            UILabel *legacyBadge = [presenter.view viewWithTag:SPBadgeTag];
+            legacyBadge.hidden = YES;
+        }
+        SPActionTarget *providerTarget = [SPActionTarget new];
+        providerTarget.presenter = presenter;
+        objc_setAssociatedObject(hostController, SPActionTargetKey, providerTarget, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        SPInstallProviderLongPress(ispView, providerTarget);
+        if ([ispLabel isKindOfClass:UILabel.class]) {
+            SPInstallProviderLongPress(ispLabel, providerTarget);
+            if (ispLabel.superview != ispView) SPInstallProviderLongPress(ispLabel.superview, providerTarget);
+        }
+        SPInstallProviderHotspot(presenter, ispView, ispLabel, providerTarget);
+        SPApplyProviderLabels(hostController);
+        SPRefreshBadge(presenter);
+        return;
+    }
 
     UIButton *existing = [presenter.view viewWithTag:SPButtonTag];
     UILabel *existingBadge = [presenter.view viewWithTag:SPBadgeTag];

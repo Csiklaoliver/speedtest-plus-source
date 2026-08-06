@@ -47,9 +47,18 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("connectedScenes", TWEAK)
         fallback = TWEAK[TWEAK.index("static void SPAttachControls"):TWEAK.index("static void SPAttachProviderControls")]
         self.assertNotIn("UILongPressGestureRecognizer", fallback)
-        self.assertNotIn("bottomAnchor", fallback)
+        self.assertIn("SPInstallBottomControlsButton", fallback)
         self.assertNotIn("rightBarButtonItems", fallback)
         self.assertNotIn("SPControlBarItemKey", TWEAK)
+
+    def test_s_plus_uses_original_bottom_safe_area_placement(self):
+        self.assertIn("SPBottomButtonTag", TWEAK)
+        self.assertIn("SPBottomBadgeTag", TWEAK)
+        self.assertIn('setTitle:@"S+  i"', TWEAK)
+        self.assertIn("button.bottomAnchor constraintEqualToAnchor:controller.view.safeAreaLayoutGuide.bottomAnchor", TWEAK)
+        self.assertIn("constant:-70.0", TWEAK)
+        self.assertIn("SPBottomActionTargetKey", TWEAK)
+        self.assertIn("SPBottomObserverTokenKey", TWEAK)
 
     def test_provider_info_icon_is_attached_to_isp_row(self):
         provider = TWEAK[TWEAK.index("static void SPAttachProviderControls"):TWEAK.index("static BOOL SPIsScopedController")]
@@ -98,7 +107,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("if (!SPHasNativeSetupSurface((UIViewController *)self))", TWEAK)
 
     def test_update_version_matches_current_ipa(self):
-        self.assertIn('SPCurrentVersion = @"0.1.18"', UPDATER)
+        self.assertIn('SPCurrentVersion = @"0.1.19"', UPDATER)
 
     def test_update_prompt_defers_to_native_setup_and_existing_modals(self):
         self.assertIn("SPIsNativeSetupController", UPDATER)
@@ -260,6 +269,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("SPRemoveCustomSurfacesForNativeSetup", TWEAK)
         self.assertIn("SPRemoveCustomGestures", TWEAK)
         self.assertIn("SPProviderHotspotTag", TWEAK)
+        self.assertIn("SPBottomButtonTag", TWEAK)
+        self.assertIn("SPBottomBadgeTag", TWEAK)
         self.assertIn("if (SPHasNativeSetupSurface(presenter))", TWEAK)
         self.assertIn("if (SPHasNativeSetupSurface(controller)) SPRemoveCustomSurfacesForNativeSetup(controller)", TWEAK)
         self.assertIn("attempt > 80", TWEAK)
