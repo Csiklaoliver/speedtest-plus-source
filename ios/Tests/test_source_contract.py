@@ -107,7 +107,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("if (!SPHasNativeSetupSurface((UIViewController *)self))", TWEAK)
 
     def test_update_version_matches_current_ipa(self):
-        self.assertIn('SPCurrentVersion = @"0.1.19"', UPDATER)
+        self.assertIn('SPCurrentVersion = @"0.1.20"', UPDATER)
 
     def test_update_prompt_defers_to_native_setup_and_existing_modals(self):
         self.assertIn("SPIsNativeSetupController", UPDATER)
@@ -146,7 +146,9 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("@selector(openControls)", TWEAK)
 
     def test_custom_button_remains_available_when_panel_is_locked(self):
-        self.assertIn("button.hidden = NO", TWEAK)
+        self.assertIn("SPShowBottomControls = NO", TWEAK)
+        self.assertIn("button.hidden = !SPShowBottomControls", TWEAK)
+        self.assertIn("accessibilityElementsHidden = button.hidden", TWEAK)
         self.assertIn("password-protected Speedtest+ controls", TWEAK)
         self.assertIn("speedtest_plus_controls_hotspot", TWEAK)
         self.assertIn("if (SPState.shared.panelHidden) SPPresentUnlock(host)", TWEAK)
@@ -201,7 +203,12 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("Speedtest+ Result", SHARE)
 
     def test_zero_badge_is_hidden(self):
-        self.assertIn("badge.hidden = count == 0", TWEAK)
+        self.assertIn("badge.hidden = (count == 0", TWEAK)
+
+    def test_bottom_s_plus_is_hidden_on_gauge_surface(self):
+        self.assertIn("SPShowBottomControls = NO", TWEAK)
+        self.assertIn("button.hidden = !SPShowBottomControls", TWEAK)
+        self.assertIn("SPInstallProviderLongPress", TWEAK)
 
     def test_speed_ranges_require_both_bounds(self):
         self.assertIn("(minimum == nil) != (maximum == nil)", CONTROLS)

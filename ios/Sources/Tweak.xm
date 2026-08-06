@@ -22,6 +22,9 @@ static const NSInteger SPBadgeTag = 0x53505032;
 // bottom affordance.
 static const NSInteger SPBottomButtonTag = 0x53505034;
 static const NSInteger SPBottomBadgeTag = 0x53505035;
+// Keep the gauge/scale surface free of floating controls.  The provider-row
+// long press remains the intentional hidden entry point for Speedtest+.
+static const BOOL SPShowBottomControls = NO;
 // A transparent, non-accessibility fallback target stays in the provider row
 // when the private ISP view drops or swallows long-press gestures.  It is not
 // a floating control and is never added to the gauge or navigation bar.
@@ -570,14 +573,16 @@ static void SPRefreshBadge(UIViewController *controller) {
     // Hiding it made the password-protected mode impossible to rediscover on
     // builds where the provider long-press was swallowed by a private view.
     if (button) {
-        button.hidden = NO;
+        button.hidden = !SPShowBottomControls && button.tag == SPBottomButtonTag;
+        button.accessibilityElementsHidden = button.hidden;
         [SPTheme applyFunctionalMaterialToView:button theme:[SPTheme themeAtIndex:SPState.shared.themeIndex]];
         button.accessibilityHint = SPState.shared.panelHidden
             ? @"Unlocks the password-protected Speedtest+ controls"
             : @"Opens the Speedtest+ guide and controls";
     }
     if (badge) {
-        badge.hidden = count == 0 || SPState.shared.panelHidden;
+        badge.hidden = (count == 0 || SPState.shared.panelHidden ||
+                        (!SPShowBottomControls && badge.tag == SPBottomBadgeTag));
         badge.text = [NSString stringWithFormat:@"CUSTOM \u2022 %ld", (long)count];
     }
 }
