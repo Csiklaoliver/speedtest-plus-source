@@ -14,6 +14,9 @@ CONTROLS = (ROOT / "Sources" / "SPControlsViewController.m").read_text(encoding=
 STATE = (ROOT / "Sources" / "SPState.m").read_text(encoding="utf-8")
 DIAGNOSTICS = (ROOT / "Sources" / "SPDiagnostics.m").read_text(encoding="utf-8")
 MOTION = (ROOT / "Sources" / "SPMotion.m").read_text(encoding="utf-8")
+BUILDER = (ROOT / "Scripts" / "build_unsigned_ipa.py").read_text(encoding="utf-8")
+INSPECTOR = (ROOT / "Scripts" / "inspect_ipa.py").read_text(encoding="utf-8")
+WORKFLOW = (ROOT.parent / ".github" / "workflows" / "ios-ipa-build.yml").read_text(encoding="utf-8")
 
 
 class SourceContractTests(unittest.TestCase):
@@ -47,18 +50,14 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("connectedScenes", TWEAK)
         fallback = TWEAK[TWEAK.index("static void SPAttachControls"):TWEAK.index("static void SPAttachProviderControls")]
         self.assertNotIn("UILongPressGestureRecognizer", fallback)
-        self.assertIn("SPInstallBottomControlsButton", fallback)
+        self.assertIn("SPAttachFallbackProviderControls", fallback)
         self.assertNotIn("rightBarButtonItems", fallback)
         self.assertNotIn("SPControlBarItemKey", TWEAK)
 
-    def test_s_plus_uses_original_bottom_safe_area_placement(self):
-        self.assertIn("SPBottomButtonTag", TWEAK)
-        self.assertIn("SPBottomBadgeTag", TWEAK)
-        self.assertIn('setTitle:@"S+  i"', TWEAK)
-        self.assertIn("button.bottomAnchor constraintEqualToAnchor:controller.view.safeAreaLayoutGuide.bottomAnchor", TWEAK)
-        self.assertIn("constant:-70.0", TWEAK)
-        self.assertIn("SPBottomActionTargetKey", TWEAK)
-        self.assertIn("SPBottomObserverTokenKey", TWEAK)
+    def test_gauge_has_no_floating_s_plus_control(self):
+        self.assertNotIn("SPBottomButtonTag", TWEAK)
+        self.assertNotIn('setTitle:@"S+  i"', TWEAK)
+        self.assertIn("provider-row info button", TWEAK)
 
     def test_provider_info_icon_is_attached_to_isp_row(self):
         provider = TWEAK[TWEAK.index("static void SPAttachProviderControls"):TWEAK.index("static BOOL SPIsScopedController")]
@@ -107,7 +106,11 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("if (!SPHasNativeSetupSurface((UIViewController *)self))", TWEAK)
 
     def test_update_version_matches_current_ipa(self):
-        self.assertIn('SPCurrentVersion = @"0.1.20"', UPDATER)
+        self.assertIn('SPCurrentVersion = @"0.1.21"', UPDATER)
+        self.assertIn('parser.add_argument("--speedtest-plus-version", required=True)', BUILDER)
+        self.assertIn('plist["SpeedtestPlusVersion"] = args.speedtest_plus_version', BUILDER)
+        self.assertIn('"speedtest_plus_version": info.get("SpeedtestPlusVersion")', INSPECTOR)
+        self.assertIn('--speedtest-plus-version "0.1.21"', WORKFLOW)
 
     def test_update_prompt_defers_to_native_setup_and_existing_modals(self):
         self.assertIn("SPIsNativeSetupController", UPDATER)
@@ -146,9 +149,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("@selector(openControls)", TWEAK)
 
     def test_custom_button_remains_available_when_panel_is_locked(self):
-        self.assertIn("SPShowBottomControls = NO", TWEAK)
-        self.assertIn("button.hidden = !SPShowBottomControls", TWEAK)
-        self.assertIn("accessibilityElementsHidden = button.hidden", TWEAK)
+        self.assertIn("button.hidden = NO", TWEAK)
+        self.assertIn("accessibilityElementsHidden = NO", TWEAK)
         self.assertIn("password-protected Speedtest+ controls", TWEAK)
         self.assertIn("speedtest_plus_controls_hotspot", TWEAK)
         self.assertIn("if (SPState.shared.panelHidden) SPPresentUnlock(host)", TWEAK)
@@ -203,12 +205,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("Speedtest+ Result", SHARE)
 
     def test_zero_badge_is_hidden(self):
-        self.assertIn("badge.hidden = (count == 0", TWEAK)
-
-    def test_bottom_s_plus_is_hidden_on_gauge_surface(self):
-        self.assertIn("SPShowBottomControls = NO", TWEAK)
-        self.assertIn("button.hidden = !SPShowBottomControls", TWEAK)
-        self.assertIn("SPInstallProviderLongPress", TWEAK)
+        self.assertIn("badge.hidden = count == 0", TWEAK)
 
     def test_speed_ranges_require_both_bounds(self):
         self.assertIn("(minimum == nil) != (maximum == nil)", CONTROLS)
@@ -276,8 +273,6 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("SPRemoveCustomSurfacesForNativeSetup", TWEAK)
         self.assertIn("SPRemoveCustomGestures", TWEAK)
         self.assertIn("SPProviderHotspotTag", TWEAK)
-        self.assertIn("SPBottomButtonTag", TWEAK)
-        self.assertIn("SPBottomBadgeTag", TWEAK)
         self.assertIn("if (SPHasNativeSetupSurface(presenter))", TWEAK)
         self.assertIn("if (SPHasNativeSetupSurface(controller)) SPRemoveCustomSurfacesForNativeSetup(controller)", TWEAK)
         self.assertIn("attempt > 80", TWEAK)

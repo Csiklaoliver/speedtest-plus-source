@@ -216,6 +216,7 @@ def inspect(source: Path) -> dict:
             "display_name": info.get("CFBundleDisplayName") or info.get("CFBundleName"),
             "version": info.get("CFBundleShortVersionString"),
             "build": info.get("CFBundleVersion"),
+            "speedtest_plus_version": info.get("SpeedtestPlusVersion"),
             "minimum_ios": info.get("MinimumOSVersion"),
             "executable": executable.name,
             "executable_sha256": sha256(executable),

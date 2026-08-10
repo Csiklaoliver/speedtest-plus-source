@@ -4,9 +4,9 @@
 // Keep the updater on the canonical public manifest path.  The custom domain
 // hosts the project site/API but does not expose this JSON route.
 static NSString * const SPManifestURL = @"https://raw.githubusercontent.com/Csiklaoliver/speedtest-plus-docs/main/ota/manifest.json";
-// Keep this in sync with the IPA's CFBundleShortVersionString.  A stale
+// Keep this in sync with the IPA's SpeedtestPlusVersion metadata. A stale
 // value here makes every current install report its own release as an update.
-static NSString * const SPCurrentVersion = @"0.1.20";
+static NSString * const SPCurrentVersion = @"0.1.21";
 
 static BOOL SPIsNativeSetupController(UIViewController *controller) {
     if (!controller) return NO;

@@ -81,6 +81,7 @@ def main() -> int:
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument("--dylib", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--speedtest-plus-version", required=True)
     args = parser.parse_args()
 
     if args.input.resolve() == args.output.resolve():
@@ -105,7 +106,7 @@ def main() -> int:
 
         plist["CFBundleDisplayName"] = "Speedtest+"
         plist["CFBundleName"] = "Speedtest+"
-        plist["SpeedtestPlusVersion"] = "0.1.17"
+        plist["SpeedtestPlusVersion"] = args.speedtest_plus_version
         plist_data = plistlib.dumps(plist, fmt=plistlib.FMT_BINARY, sort_keys=False)
 
         with zipfile.ZipFile(args.output, "w", allowZip64=True) as target:
