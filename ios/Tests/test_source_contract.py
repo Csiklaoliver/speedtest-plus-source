@@ -106,11 +106,11 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("if (!SPHasNativeSetupSurface((UIViewController *)self))", TWEAK)
 
     def test_update_version_matches_current_ipa(self):
-        self.assertIn('SPCurrentVersion = @"0.1.22"', UPDATER)
+        self.assertIn('SPCurrentVersion = @"0.1.23"', UPDATER)
         self.assertIn('parser.add_argument("--speedtest-plus-version", required=True)', BUILDER)
         self.assertIn('plist["SpeedtestPlusVersion"] = args.speedtest_plus_version', BUILDER)
         self.assertIn('"speedtest_plus_version": info.get("SpeedtestPlusVersion")', INSPECTOR)
-        self.assertIn('--speedtest-plus-version "0.1.22"', WORKFLOW)
+        self.assertIn('--speedtest-plus-version "0.1.23"', WORKFLOW)
 
     def test_update_prompt_defers_to_native_setup_and_existing_modals(self):
         self.assertIn("SPIsNativeSetupController", UPDATER)
@@ -120,6 +120,11 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("Continue action is visible", UPDATER)
         self.assertIn("navigationController", UPDATER)
         self.assertIn("presentingViewController", UPDATER)
+
+    def test_update_prompt_does_not_call_an_unsigned_ipa_signed(self):
+        self.assertIn("Download the unsigned IPA", UPDATER)
+        self.assertIn("signing and sideloading method", UPDATER)
+        self.assertNotIn("signed download page", UPDATER)
 
     def test_custom_guide_and_unlock_are_blocked_during_native_setup(self):
         self.assertIn("static BOOL SPLooksLikeStockSetupController", TWEAK)
@@ -215,9 +220,27 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('containsString:@"update available"', TWEAK)
 
     def test_number_pads_have_a_done_control(self):
+        self.assertIn("configureKeyboardDismissalForField", CONTROLS)
         self.assertIn("field.inputAccessoryView = keyboardBar", CONTROLS)
         self.assertIn("UIBarButtonSystemItemDone", CONTROLS)
         self.assertIn('initWithTitle:@"Apply"', CONTROLS)
+
+    def test_alert_text_fields_can_dismiss_their_own_keyboard(self):
+        self.assertIn("target:field action:@selector(resignFirstResponder)", CONTROLS)
+        self.assertIn('field.placeholder = @"Profile name"', CONTROLS)
+        self.assertIn('field.placeholder = @"Optional password"', CONTROLS)
+        self.assertIn("[self configureKeyboardDismissalForField:field]", CONTROLS)
+
+    def test_profile_alert_transition_waits_for_uikit_dismissal(self):
+        self.assertIn("presentAfterCurrentAlertDismisses:controller attempt:0", CONTROLS)
+        self.assertIn("shown.isBeingDismissed || shown.isBeingPresented", CONTROLS)
+        self.assertIn("attempt > 20", CONTROLS)
+        self.assertIn("presentAfterCurrentAlertDismisses:controller attempt:attempt + 1", CONTROLS)
+
+    def test_controls_and_guide_wait_for_a_dismissing_alert(self):
+        self.assertIn("shown.isBeingDismissed || shown.isBeingPresented || presenter.isBeingDismissed", CONTROLS)
+        self.assertIn("[self presentFrom:presenter]", CONTROLS)
+        self.assertIn("[self presentGuideFrom:presenter allowOpenControls:allowOpenControls]", CONTROLS)
 
     def test_profile_slots_do_not_persist_nsnull(self):
         profile_section = STATE[

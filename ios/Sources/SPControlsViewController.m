@@ -28,7 +28,16 @@
     // Dismiss an alert/transition first, then retry from its original host.
     UIViewController *shown = presenter.presentedViewController;
     if (shown) {
-        if ([shown isKindOfClass:UIAlertController.class] || shown.isBeingDismissed) {
+        // A UIAlert action is already dismissing its controller when its
+        // handler runs. Calling dismiss a second time can lose the completion
+        // block and make the controls appear impossible to reopen.
+        if (shown.isBeingDismissed || shown.isBeingPresented || presenter.isBeingDismissed || presenter.isBeingPresented) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.30 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [self presentFrom:presenter];
+            });
+            return;
+        }
+        if ([shown isKindOfClass:UIAlertController.class]) {
             [presenter dismissViewControllerAnimated:YES completion:^{
                 [self presentFrom:presenter];
             }];
@@ -66,7 +75,13 @@
     if (!presenter) return;
     UIViewController *shown = presenter.presentedViewController;
     if (shown) {
-        if ([shown isKindOfClass:UIAlertController.class] || shown.isBeingDismissed) {
+        if (shown.isBeingDismissed || shown.isBeingPresented || presenter.isBeingDismissed || presenter.isBeingPresented) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.30 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [self presentGuideFrom:presenter allowOpenControls:allowOpenControls];
+            });
+            return;
+        }
+        if ([shown isKindOfClass:UIAlertController.class]) {
             [presenter dismissViewControllerAnimated:YES completion:^{
                 [self presentGuideFrom:presenter allowOpenControls:allowOpenControls];
             }];
@@ -271,6 +286,21 @@
     return button;
 }
 
+- (void)configureKeyboardDismissalForField:(UITextField *)field {
+    if (![field isKindOfClass:UITextField.class]) return;
+    field.delegate = self;
+    field.returnKeyType = UIReturnKeyDone;
+    UIToolbar *keyboardBar = [[UIToolbar alloc] initWithFrame:CGRectMake(0, 0, 0, 44)];
+    UIBarButtonItem *space = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
+    // Target the exact text field. Alert-controller fields are not descendants
+    // of self.view, so ending editing on the controls view cannot dismiss
+    // their numeric/default keyboard.
+    UIBarButtonItem *done = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:field action:@selector(resignFirstResponder)];
+    keyboardBar.items = @[space, done];
+    [keyboardBar sizeToFit];
+    field.inputAccessoryView = keyboardBar;
+}
+
 - (UITextField *)field:(NSString *)hint key:(NSString *)key keyboard:(UIKeyboardType)keyboard {
     UITextField *field = [UITextField new];
     field.placeholder = hint;
@@ -280,14 +310,7 @@
     field.layer.cornerRadius = 10;
     field.clearButtonMode = UITextFieldViewModeWhileEditing;
     field.autocorrectionType = UITextAutocorrectionTypeNo;
-    field.delegate = self;
-    field.returnKeyType = UIReturnKeyDone;
-    UIToolbar *keyboardBar = [[UIToolbar alloc] initWithFrame:CGRectMake(0, 0, 0, 44)];
-    UIBarButtonItem *space = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemFlexibleSpace target:nil action:nil];
-    UIBarButtonItem *done = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(dismissKeyboard)];
-    keyboardBar.items = @[space, done];
-    [keyboardBar sizeToFit];
-    field.inputAccessoryView = keyboardBar;
+    [self configureKeyboardDismissalForField:field];
     UIView *padding = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 12, 1)];
     field.leftView = padding;
     field.leftViewMode = UITextFieldViewModeAlways;
@@ -418,14 +441,27 @@
 }
 
 - (void)presentAfterCurrentAlertDismisses:(UIViewController *)controller {
+    [self presentAfterCurrentAlertDismisses:controller attempt:0];
+}
+
+- (void)presentAfterCurrentAlertDismisses:(UIViewController *)controller attempt:(NSInteger)attempt {
+    if (!controller || attempt > 20) return;
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (self.presentedViewController) {
-            [self dismissViewControllerAnimated:YES completion:^{
-                [self presentViewController:controller animated:YES completion:nil];
-            }];
-        } else {
-            [self presentViewController:controller animated:YES completion:nil];
+        if (controller.presentingViewController || self.isBeingDismissed) return;
+        UIViewController *shown = self.presentedViewController;
+        if (shown.isBeingDismissed || shown.isBeingPresented) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.10 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                [self presentAfterCurrentAlertDismisses:controller attempt:attempt + 1];
+            });
+            return;
         }
+        if (shown) {
+            [self dismissViewControllerAnimated:YES completion:^{
+                [self presentAfterCurrentAlertDismisses:controller attempt:attempt + 1];
+            }];
+            return;
+        }
+        [self presentViewController:controller animated:YES completion:nil];
     });
 }
 
@@ -509,7 +545,10 @@
 - (void)nameAndSaveProfile:(NSInteger)index replacing:(BOOL)replacing {
     void (^prompt)(void) = ^{
         UIAlertController *name = [UIAlertController alertControllerWithTitle:@"Profile name" message:@"Enter 1 to 24 characters." preferredStyle:UIAlertControllerStyleAlert];
-        [name addTextFieldWithConfigurationHandler:^(UITextField *field) { field.placeholder = @"Profile name"; }];
+        [name addTextFieldWithConfigurationHandler:^(UITextField *field) {
+            field.placeholder = @"Profile name";
+            [self configureKeyboardDismissalForField:field];
+        }];
         [name addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
         [name addAction:[UIAlertAction actionWithTitle:@"Save" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
             NSString *profileName = [self trimmed:name.textFields.firstObject.text ?: @""];
@@ -539,7 +578,11 @@
 
 - (void)configureLock {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Protect controls" message:@"Leave the password blank to keep the panel visible. If hidden, tap the Speedtest+ info button or long-press the provider area to unlock it." preferredStyle:UIAlertControllerStyleAlert];
-    [alert addTextFieldWithConfigurationHandler:^(UITextField *field) { field.placeholder = @"Optional password"; field.secureTextEntry = YES; }];
+    [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
+        field.placeholder = @"Optional password";
+        field.secureTextEntry = YES;
+        [self configureKeyboardDismissalForField:field];
+    }];
     [alert addAction:[UIAlertAction actionWithTitle:@"Keep visible" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { [SPState.shared setPanelHidden:NO password:nil]; }]];
     [alert addAction:[UIAlertAction actionWithTitle:@"Hide" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) { [SPState.shared setPanelHidden:YES password:alert.textFields.firstObject.text]; }]];
     [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
