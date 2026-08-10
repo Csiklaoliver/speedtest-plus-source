@@ -1314,8 +1314,10 @@ static id SPSavedModelForReport(id owner, id report) {
 
 // CoreDataManager can hand the report object to its saver before the result
 // model has been attached. Keep the pending customized result alive across a
-// short, bounded window so a native asynchronous save cannot silently restore
-// the dots/placeholders or the measured value.
+// bounded window so a native asynchronous save cannot silently restore the
+// dots/placeholders or the measured value.  Some devices attach the Core Data
+// model after the result transition finishes, so retain the repair long enough
+// to cover that normal asynchronous path without ever touching an older test.
 static void SPApplyPendingSavedModelEventually(id owner, id report, NSDictionary *pending) {
     if (!owner || !pending.count) return;
     __weak id weakOwner = owner;
@@ -1333,7 +1335,7 @@ static void SPApplyPendingSavedModelEventually(id owner, id report, NSDictionary
         }
     };
     attempt();
-    for (NSNumber *delay in @[@0.10, @0.35, @0.80, @1.50]) {
+    for (NSNumber *delay in @[@0.10, @0.35, @0.80, @1.50, @2.50, @4.00]) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), attempt);
     }
 }
