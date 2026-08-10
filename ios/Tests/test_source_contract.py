@@ -106,11 +106,11 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("if (!SPHasNativeSetupSurface((UIViewController *)self))", TWEAK)
 
     def test_update_version_matches_current_ipa(self):
-        self.assertIn('SPCurrentVersion = @"0.1.21"', UPDATER)
+        self.assertIn('SPCurrentVersion = @"0.1.22"', UPDATER)
         self.assertIn('parser.add_argument("--speedtest-plus-version", required=True)', BUILDER)
         self.assertIn('plist["SpeedtestPlusVersion"] = args.speedtest_plus_version', BUILDER)
         self.assertIn('"speedtest_plus_version": info.get("SpeedtestPlusVersion")', INSPECTOR)
-        self.assertIn('--speedtest-plus-version "0.1.21"', WORKFLOW)
+        self.assertIn('--speedtest-plus-version "0.1.22"', WORKFLOW)
 
     def test_update_prompt_defers_to_native_setup_and_existing_modals(self):
         self.assertIn("SPIsNativeSetupController", UPDATER)
@@ -285,7 +285,10 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("UIControlEventTouchUpInside", TWEAK)
         self.assertIn("SPHookLocal", TWEAK)
         self.assertIn("OnboardingPage2ViewController", TWEAK)
+        self.assertIn("OnboardingPage3ViewController", TWEAK)
         self.assertIn("OnboardingViewController", TWEAK)
+        self.assertIn('"_TtC9SpeedTest29OnboardingPage3ViewController"', INSPECTOR)
+        self.assertIn('"_TtC9SpeedTest29OnboardingPage3ViewController": {"viewDidLoad"}', (ROOT / "Scripts" / "verify_hook_map.py").read_text(encoding="utf-8"))
         self.assertIn("never fabricates an OS permission result", TWEAK)
 
     def test_saved_result_mutation_retries_when_model_is_attached_late(self):

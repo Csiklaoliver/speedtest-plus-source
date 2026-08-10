@@ -61,6 +61,7 @@ INTERESTING_CLASSES = {
     "_TtC9SpeedTest26SelectServerViewController",
     "_TtC9SpeedTest33CompareResultsOfferViewController",
     "_TtC9SpeedTest28SpeedtestCardsViewController",
+    "_TtC9SpeedTest29OnboardingPage3ViewController",
     "_TtC5Gauge22GaugeViewControlleriOS",
     "_TtC5Gauge17ISPHostController",
     "TestParameters",

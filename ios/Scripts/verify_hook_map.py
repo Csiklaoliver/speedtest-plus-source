@@ -18,6 +18,7 @@ EXPECTED = {
         "_TtC9SpeedTest33CompareResultsOfferViewController": {"viewWillAppear:"},
         "_TtC9SpeedTest30PreparedFeedbackViewController": {"viewDidLoad"},
         "_TtC9SpeedTest28SpeedtestCardsViewController": {"collectionView:willDisplayCell:forItemAtIndexPath:"},
+        "_TtC9SpeedTest29OnboardingPage3ViewController": {"viewDidLoad"},
         "_TtC9SpeedTestP33_A9A507B3669C583A38FE6357D8AFFD8023SharingTextActivityItem": {"item"},
         "_TtC9SpeedTestP33_A9A507B3669C583A38FE6357D8AFFD8033SharingResultsCSVTextActivityItem": {"activityViewController:itemForActivityType:"},
     },

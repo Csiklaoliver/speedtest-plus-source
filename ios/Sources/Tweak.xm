@@ -1714,6 +1714,13 @@ static void HookOnboardingPage2DidLoad(id self, SEL _cmd) {
     dispatch_async(dispatch_get_main_queue(), ^{ SPRepairNativeSetupControls((UIViewController *)self); });
 }
 
+static void (*OrigOnboardingPage3DidLoad)(id, SEL);
+static void HookOnboardingPage3DidLoad(id self, SEL _cmd) {
+    if (OrigOnboardingPage3DidLoad) OrigOnboardingPage3DidLoad(self, _cmd);
+    SPRepairNativeSetupControls((UIViewController *)self);
+    dispatch_async(dispatch_get_main_queue(), ^{ SPRepairNativeSetupControls((UIViewController *)self); });
+}
+
 static void (*OrigOnboardingViewDidLoad)(id, SEL);
 static void HookOnboardingViewDidLoad(id self, SEL _cmd) {
     if (OrigOnboardingViewDidLoad) OrigOnboardingViewDidLoad(self, _cmd);
@@ -1780,6 +1787,8 @@ __attribute__((constructor)) static void SpeedtestPlusInitialize(void) {
         SPHookLocal(onboardingPage1, @"viewDidLoad", (IMP)HookOnboardingPage1DidLoad, (IMP *)&OrigOnboardingPage1DidLoad);
         Class onboardingPage2 = NSClassFromString(@"_TtC9SpeedTest29OnboardingPage2ViewController");
         SPHookLocal(onboardingPage2, @"viewDidLoad", (IMP)HookOnboardingPage2DidLoad, (IMP *)&OrigOnboardingPage2DidLoad);
+        Class onboardingPage3 = NSClassFromString(@"_TtC9SpeedTest29OnboardingPage3ViewController");
+        SPHookLocal(onboardingPage3, @"viewDidLoad", (IMP)HookOnboardingPage3DidLoad, (IMP *)&OrigOnboardingPage3DidLoad);
         Class onboarding = NSClassFromString(@"_TtC9SpeedTest24OnboardingViewController");
         SPHookLocal(onboarding, @"viewDidLoad", (IMP)HookOnboardingViewDidLoad, (IMP *)&OrigOnboardingViewDidLoad);
         SPHookLocal(onboarding, @"viewDidAppear:", (IMP)HookOnboardingViewDidAppear, (IMP *)&OrigOnboardingViewDidAppear);
