@@ -212,7 +212,9 @@
     UIButton *lock = [self button:@"Hide or password protect controls" action:@selector(configureLock)];
     [self.stack addArrangedSubview:lock];
     UIStackView *links = [self horizontalStack];
-    [links addArrangedSubview:[self button:@"Report a bug" action:@selector(openBugReport)]];
+    UIButton *bugDoctor = [self button:@"AI Bug Doctor" action:@selector(openBugReport)];
+    bugDoctor.accessibilityLabel = @"Open AI-assisted bug triage and review";
+    [links addArrangedSubview:bugDoctor];
     [links addArrangedSubview:[self button:@"Source and docs" action:@selector(openSource)]];
     [self.stack addArrangedSubview:links];
     UISwitch *updates = [UISwitch new];
