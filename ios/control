@@ -1,6 +1,6 @@
 Package: tech.oliverprojects.speedtestplus
 Name: Speedtest+
-Version: 0.1.5
+Version: 0.1.26
 Architecture: iphoneos-arm
 Description: Local Speedtest presentation controls for iOS.
 Maintainer: Speedtest+ Contributors

@@ -6,7 +6,7 @@
 static NSString * const SPManifestURL = @"https://raw.githubusercontent.com/Csiklaoliver/speedtest-plus-docs/main/ota/manifest.json";
 // Keep this in sync with the IPA's SpeedtestPlusVersion metadata. A stale
 // value here makes every current install report its own release as an update.
-static NSString * const SPCurrentVersion = @"0.1.25";
+static NSString * const SPCurrentVersion = @"0.1.26";
 
 static BOOL SPIsNativeSetupController(UIViewController *controller) {
     if (!controller) return NO;
