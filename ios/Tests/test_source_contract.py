@@ -114,6 +114,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn('plist["SpeedtestPlusVersion"] = args.speedtest_plus_version', BUILDER)
         self.assertIn('"speedtest_plus_version": info.get("SpeedtestPlusVersion")', INSPECTOR)
         self.assertIn('--speedtest-plus-version "0.1.26"', WORKFLOW)
+        self.assertIn('TARGET=iphone:clang:16.5:12.0', WORKFLOW)
+        self.assertIn('iPhoneOS16.5.sdk.tar.xz', WORKFLOW)
 
     def test_update_prompt_defers_to_native_setup_and_existing_modals(self):
         self.assertIn("SPIsNativeSetupController", UPDATER)
