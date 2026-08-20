@@ -1,0 +1,52 @@
+name: SpeedtestPlusSimulator
+options:
+  bundleIdPrefix: tech.oliverprojects
+  deploymentTarget:
+    iOS: "15.0"
+settings:
+  base:
+    CLANG_ENABLE_MODULES: YES
+    CODE_SIGNING_ALLOWED: NO
+    SUPPORTS_MACCATALYST: NO
+targets:
+  SpeedtestPlusSimulator:
+    type: application
+    platform: iOS
+    sources:
+      - path: Harness
+      - path: ../Sources
+        excludes:
+          - Tweak.xm
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: tech.oliverprojects.speedtestplus.simulator
+        PRODUCT_NAME: SpeedtestPlusSimulator
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Speedtest+ Lab
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
+  SpeedtestPlusSimulatorUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: SpeedtestPlusSimulator
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: tech.oliverprojects.speedtestplus.simulator-uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: SpeedtestPlusSimulator
+schemes:
+  SpeedtestPlusSimulator:
+    build:
+      targets:
+        SpeedtestPlusSimulator: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - SpeedtestPlusSimulatorUITests
