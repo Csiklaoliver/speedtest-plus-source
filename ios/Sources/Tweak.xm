@@ -1586,12 +1586,15 @@ static void HookSaveReportAsResult(id self, SEL _cmd, id report) {
 }
 
 static void SPHook(Class cls, NSString *selectorName, IMP replacement, IMP *original) {
-    if (!cls) return;
-    SEL selector = NSSelectorFromString(selectorName);
-    if (!class_getInstanceMethod(cls, selector)) return;
-    Method method = class_getInstanceMethod(cls, selector);
-    if (original) *original = method_getImplementation(method);
-    method_setImplementation(method, replacement);
+    // Never mutate the superclass method returned by class_getInstanceMethod.
+    // Several Speedtest controllers inherit UIKit lifecycle methods instead
+    // of implementing them locally. Calling method_setImplementation on that
+    // inherited Method replaces UIViewController's implementation globally,
+    // causing unrelated launch/onboarding controllers to run Speedtest+ hooks
+    // and potentially preventing the native startup flow from completing.
+    // SPHookLocal adds a class-scoped override when the selector is inherited
+    // and captures the actual superclass implementation for the hook to call.
+    SPHookLocal(cls, selectorName, replacement, original);
 }
 
 __attribute__((constructor)) static void SpeedtestPlusInitialize(void) {

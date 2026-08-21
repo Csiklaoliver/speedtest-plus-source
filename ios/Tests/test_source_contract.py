@@ -108,6 +108,12 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("if (SPHasNativeSetupSurface(controller)) return;", badge)
         self.assertIn("if (!SPHasNativeSetupSurface((UIViewController *)self))", TWEAK)
 
+    def test_runtime_hooks_never_replace_inherited_uikit_methods_globally(self):
+        hook = TWEAK[TWEAK.index("static void SPHook(Class cls"):
+                     TWEAK.index("__attribute__((constructor))")]
+        self.assertIn("SPHookLocal(cls, selectorName, replacement, original)", hook)
+        self.assertNotIn("method_setImplementation(method, replacement)", hook)
+
     def test_update_version_matches_current_ipa(self):
         self.assertIn('SPCurrentVersion = @"0.1.26"', UPDATER)
         self.assertIn('parser.add_argument("--speedtest-plus-version", required=True)', BUILDER)
