@@ -20,6 +20,25 @@ WORKFLOW = (ROOT.parent / ".github" / "workflows" / "ios-ipa-build.yml").read_te
 
 
 class SourceContractTests(unittest.TestCase):
+    def test_async_frames_cannot_write_to_a_later_run(self):
+        self.assertGreaterEqual(STATE.count("self.runGeneration += 1"), 2)
+        self.assertIn("state.runGeneration != generation", TWEAK)
+        self.assertIn("SPState.shared.runGeneration != generation", TWEAK)
+        self.assertIn("UIApplicationDidEnterBackgroundNotification", TWEAK)
+
+    def test_all_hooks_are_class_local(self):
+        hook = TWEAK[TWEAK.index("static void SPHook(Class"):TWEAK.index("__attribute__((constructor))")]
+        self.assertIn("SPHookLocal(cls, selectorName, replacement, original)", hook)
+        self.assertNotIn("method_setImplementation", hook)
+
+    def test_offline_has_its_own_renderable_controller(self):
+        self.assertIn("@implementation SPOfflineViewController", TWEAK)
+        self.assertIn("renderSpeed:value direction:direction", TWEAK)
+        self.assertNotIn('NSSelectorFromString(@"t0:")', TWEAK)
+        self.assertIn("offline.modalPresentationStyle = UIModalPresentationFullScreen", TWEAK)
+        self.assertIn("const NSInteger frames = 120", TWEAK)
+        self.assertIn("progress:progress * 2.0", TWEAK)
+
     def test_confirmed_stage_mapping(self):
         self.assertIn("SPStageDownload = 2", TWEAK)
         self.assertIn("SPStageUpload = 3", TWEAK)
@@ -106,11 +125,11 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("if (!SPHasNativeSetupSurface((UIViewController *)self))", TWEAK)
 
     def test_update_version_matches_current_ipa(self):
-        self.assertIn('SPCurrentVersion = @"0.1.25"', UPDATER)
+        self.assertIn('SPCurrentVersion = @"0.1.26"', UPDATER)
         self.assertIn('parser.add_argument("--speedtest-plus-version", required=True)', BUILDER)
         self.assertIn('plist["SpeedtestPlusVersion"] = args.speedtest_plus_version', BUILDER)
         self.assertIn('"speedtest_plus_version": info.get("SpeedtestPlusVersion")', INSPECTOR)
-        self.assertIn('--speedtest-plus-version "0.1.25"', WORKFLOW)
+        self.assertIn('--speedtest-plus-version "0.1.26"', WORKFLOW)
 
     def test_update_prompt_defers_to_native_setup_and_existing_modals(self):
         self.assertIn("SPIsNativeSetupController", UPDATER)

@@ -86,6 +86,7 @@ static NSDictionary<NSString *, id> *SPNormalizedConfiguration(id value) {
 @property(nonatomic) uint64_t testSeed;
 @property(nonatomic) NSInteger currentStage;
 @property(nonatomic) BOOL testStarted;
+@property(nonatomic, readwrite) NSUInteger runGeneration;
 @property(nonatomic) NSNumber *finalDownload;
 @property(nonatomic) NSNumber *finalUpload;
 @property(nonatomic) BOOL runActive;
@@ -266,6 +267,7 @@ static NSString *SPPasswordHash(NSString *password) {
 }
 
 - (void)beginTest {
+    self.runGeneration += 1;
     uint64_t random = 0;
     if (SecRandomCopyBytes(kSecRandomDefault, sizeof(random), (uint8_t *)&random) != errSecSuccess) {
         random = (uint64_t)(NSDate.date.timeIntervalSince1970 * 1000.0);
@@ -288,6 +290,13 @@ static NSString *SPPasswordHash(NSString *password) {
         if (stage == 3) self.uploadAnimationStartedAt = 0;
     }
     self.currentStage = stage;
+}
+
+- (void)cancelTest {
+    self.runGeneration += 1;
+    self.testStarted = NO;
+    self.currentStage = 0;
+    self.pendingLocalResult = nil;
 }
 
 - (BOOL)hasSpeedOverrideForDirection:(SPDirection)direction {
@@ -350,7 +359,7 @@ static NSString *SPPasswordHash(NSString *password) {
 }
 
 - (double)displayMbpsForDirection:(SPDirection)direction measuredMbps:(double)measured progress:(double)progress {
-    if (![self runHasSpeedOverrideForDirection:direction]) return measured;
+    if (![self runHasSpeedOverrideForDirection:direction] && ![self runBoolForKey:@"offline_mode"]) return measured;
     // A zero native callback is normal while the transfer socket warms up.
     // Do not let that first empty frame pin a configured run at 0 Mbps.
     if (!isfinite(measured)) measured = 0.0;

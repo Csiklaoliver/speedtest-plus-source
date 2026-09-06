@@ -263,11 +263,13 @@ static void SPScheduleFinalResultLabelRepair(id controller, NSDictionary *result
     if (!controller || !result.count) return;
     __weak id weakController = controller;
     NSNumber *completion = result[@"completed_at"];
+    const NSUInteger generation = SPState.shared.runGeneration;
     for (NSNumber *delay in @[@0.0, @0.08, @0.25, @0.60, @1.20]) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             id strongController = weakController;
             NSDictionary *current = SPState.shared.lastResult;
-            if (!strongController || !current.count ||
+            if (!strongController || !current.count || SPState.shared.testActive ||
+                SPState.shared.runGeneration != generation ||
                 (completion && ![completion isEqual:current[@"completed_at"]])) return;
             SPApplyResultOverrideLabels(strongController, current);
         });
@@ -301,19 +303,137 @@ static void SPApplyDataSaverToObject(id owner) {
     }
 }
 
+// Offline mode must not depend on private Swift gauge methods or server discovery.
+// This controller is presented only for an explicitly selected local simulation.
+@interface SPOfflineViewController : UIViewController
+@property(nonatomic, strong) UILabel *downloadResult;
+@property(nonatomic, strong) UILabel *uploadResult;
+@property(nonatomic, strong) UILabel *pingResult;
+@property(nonatomic, strong) UILabel *jitterResult;
+@property(nonatomic, strong) UILabel *userMessageLabel;
+@property(nonatomic, strong) UILabel *reading;
+@property(nonatomic, strong) UIView *dial;
+@property(nonatomic, strong) CAShapeLayer *track;
+@property(nonatomic, strong) CAShapeLayer *fill;
+@property(nonatomic, strong) CAShapeLayer *needle;
+@property(nonatomic) NSUInteger generation;
+- (void)renderSpeed:(double)value direction:(SPDirection)direction;
+@end
+
+@implementation SPOfflineViewController
+- (UILabel *)label:(NSString *)text size:(CGFloat)size {
+    UILabel *label = [UILabel new];
+    label.text = text;
+    label.textColor = UIColor.whiteColor;
+    label.font = [UIFont monospacedDigitSystemFontOfSize:size weight:UIFontWeightRegular];
+    label.textAlignment = NSTextAlignmentCenter;
+    label.numberOfLines = 0;
+    return label;
+}
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.view.backgroundColor = [UIColor colorWithRed:0.043 green:0.047 blue:0.106 alpha:1];
+    self.generation = SPState.shared.runGeneration;
+    self.downloadResult = [self label:@"0.0" size:26];
+    self.uploadResult = [self label:@"0.0" size:26];
+    self.pingResult = [self label:@"-" size:18];
+    self.jitterResult = [self label:@"-" size:18];
+    self.reading = [self label:@"Preparing…" size:34];
+    self.reading.adjustsFontSizeToFitWidth = YES;
+    self.reading.minimumScaleFactor = 0.25;
+    self.userMessageLabel = [self label:@"Offline simulation • No test traffic\nScale: 0–1,000 Mbps" size:14];
+    UIButton *close = [UIButton buttonWithType:UIButtonTypeSystem];
+    [close setTitle:@"Close" forState:UIControlStateNormal];
+    [close addTarget:self action:@selector(close) forControlEvents:UIControlEventTouchUpInside];
+    UIStackView *down = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:@"Download Mbps" size:16], self.downloadResult]];
+    UIStackView *up = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:@"Upload Mbps" size:16], self.uploadResult]];
+    down.axis = up.axis = UILayoutConstraintAxisVertical;
+    UIStackView *metrics = [[UIStackView alloc] initWithArrangedSubviews:@[down, up]];
+    metrics.distribution = UIStackViewDistributionFillEqually;
+    UIStackView *latency = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:@"Ping ms" size:14], self.pingResult, [self label:@"Jitter ms" size:14], self.jitterResult]];
+    latency.distribution = UIStackViewDistributionFillEqually;
+    self.dial = [UIView new];
+    self.track = [CAShapeLayer layer]; self.fill = [CAShapeLayer layer]; self.needle = [CAShapeLayer layer];
+    for (CAShapeLayer *layer in @[self.track, self.fill]) {
+        layer.fillColor = UIColor.clearColor.CGColor;
+        layer.lineWidth = 18;
+        layer.lineCap = kCALineCapRound;
+        [self.dial.layer addSublayer:layer];
+    }
+    self.track.strokeColor = [UIColor colorWithWhite:0.22 alpha:1].CGColor;
+    self.fill.strokeEnd = 0;
+    self.needle.strokeColor = UIColor.whiteColor.CGColor;
+    self.needle.lineWidth = 5;
+    [self.dial.layer addSublayer:self.needle];
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[close, metrics, latency, self.dial, self.reading, self.userMessageLabel]];
+    stack.axis = UILayoutConstraintAxisVertical; stack.spacing = 16;
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:stack];
+    UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
+    [NSLayoutConstraint activateConstraints:@[
+        [stack.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:20],
+        [stack.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-20],
+        [stack.topAnchor constraintEqualToAnchor:safe.topAnchor constant:8],
+        [stack.bottomAnchor constraintLessThanOrEqualToAnchor:safe.bottomAnchor constant:-8],
+        [close.heightAnchor constraintEqualToConstant:44],
+        [self.dial.heightAnchor constraintEqualToAnchor:safe.heightAnchor multiplier:0.40]
+    ]];
+}
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    CGRect bounds = self.dial.bounds;
+    CGFloat radius = MAX(0, MIN(bounds.size.width, bounds.size.height) / 2 - 18);
+    CGPoint center = CGPointMake(CGRectGetMidX(bounds), CGRectGetMidY(bounds));
+    UIBezierPath *arc = [UIBezierPath bezierPathWithArcCenter:center radius:radius startAngle:M_PI * 0.75 endAngle:M_PI * 2.25 clockwise:YES];
+    self.track.path = self.fill.path = arc.CGPath;
+}
+- (void)renderSpeed:(double)value direction:(SPDirection)direction {
+    if (!isfinite(value)) return;
+    CGFloat fraction = MIN(1, MAX(0, log10(1 + MAX(0, value)) / log10(1001)));
+    [CATransaction begin]; [CATransaction setDisableActions:SPState.shared.reduceMotionEnabled];
+    [CATransaction setAnimationDuration:0.1];
+    self.fill.strokeColor = (direction == SPDirectionDownload ? UIColor.cyanColor : UIColor.magentaColor).CGColor;
+    self.fill.strokeEnd = fraction;
+    CGFloat angle = M_PI * (0.75 + 1.5 * fraction);
+    CGRect bounds = self.dial.bounds;
+    CGPoint center = CGPointMake(CGRectGetMidX(bounds), CGRectGetMidY(bounds));
+    CGFloat radius = MAX(0, MIN(bounds.size.width, bounds.size.height) / 2 - 35);
+    UIBezierPath *line = [UIBezierPath bezierPath]; [line moveToPoint:center];
+    [line addLineToPoint:CGPointMake(center.x + cos(angle) * radius, center.y + sin(angle) * radius)];
+    self.needle.path = line.CGPath;
+    [CATransaction commit];
+    self.reading.text = [NSString stringWithFormat:@"%@\n%.1f Mbps", direction == SPDirectionDownload ? @"Download" : @"Upload", value];
+}
+- (void)close {
+    if (SPState.shared.runGeneration == self.generation && SPState.shared.testActive) [SPState.shared cancelTest];
+    [self dismissViewControllerAnimated:YES completion:nil];
+}
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    if (!SPState.shared.testActive && !SPState.shared.lastResult.count) self.userMessageLabel.text = @"Simulation stopped. Close to return to GO.";
+}
+@end
+
 static void SPSetOfflineFrame(id controller, SPDirection direction, double value) {
     NSString *text = SPFormatMbps(value);
     UILabel *label = SPDisplayLabel(controller, direction == SPDirectionDownload ? @"downloadResult" : @"uploadResult");
     if (label) label.text = text;
-    // Some builds expose the gauge display directly, while others keep it in
-    // a child object.  Both calls are optional and therefore safe on either.
-    id display = SPObject(controller, NSSelectorFromString(@"speedDisplay"));
-    if (!display) display = SPObject(controller, NSSelectorFromString(@"display"));
-    if (display) SPSetDouble(display, NSSelectorFromString(@"t0:"), value);
+    if ([controller isKindOfClass:SPOfflineViewController.class])
+        [(SPOfflineViewController *)controller renderSpeed:value direction:direction];
 }
 
 static void SPStartOfflineDemo(id controller) {
     SPState *state = SPState.shared;
+    if (![controller isKindOfClass:UIViewController.class] || [(UIViewController *)controller presentedViewController]) {
+        [state cancelTest];
+        return;
+    }
+    SPOfflineViewController *offline = [SPOfflineViewController new];
+    offline.modalPresentationStyle = UIModalPresentationFullScreen;
+    [(UIViewController *)controller presentViewController:offline animated:YES completion:nil];
+    [offline loadViewIfNeeded];
+    controller = offline;
+    const NSUInteger generation = state.runGeneration;
     [state setStage:SPStageDownload];
     UILabel *download = SPDisplayLabel(controller, @"downloadResult");
     UILabel *upload = SPDisplayLabel(controller, @"uploadResult");
@@ -324,23 +444,23 @@ static void SPStartOfflineDemo(id controller) {
     if (ping) ping.text = @"-";
     if (jitter) jitter.text = @"-";
     __weak id weakController = controller;
-    const NSInteger frames = 24;
+    const NSInteger frames = 120;
     for (NSInteger frame = 0; frame <= frames; frame++) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(frame * 100 * NSEC_PER_MSEC)), dispatch_get_main_queue(), ^{
             id strongController = weakController;
-            if (!strongController || !state.testActive) return;
+            if (!strongController || !state.testActive || state.runGeneration != generation) return;
             double progress = (double)frame / (double)frames;
-            if (frame <= 12) {
+            if (frame <= frames / 2) {
                 [state setStage:SPStageDownload];
-                double shown = [state displayMbpsForDirection:SPDirectionDownload measuredMbps:100.0 progress:progress];
+                double shown = [state displayMbpsForDirection:SPDirectionDownload measuredMbps:100.0 progress:progress * 2.0];
                 SPSetOfflineFrame(strongController, SPDirectionDownload, shown);
             } else {
                 [state setStage:SPStageUpload];
-                double uploadProgress = (double)(frame - 12) / (double)(frames - 12);
+                double uploadProgress = (double)(frame - frames / 2) / (double)(frames / 2);
                 double shown = [state displayMbpsForDirection:SPDirectionUpload measuredMbps:20.0 progress:uploadProgress];
                 SPSetOfflineFrame(strongController, SPDirectionUpload, shown);
             }
-            if (frame == 12) {
+            if (frame == frames / 2) {
                 NSNumber *demoPing = [state runNumberForKey:@"ping"] ?: @20;
                 NSNumber *demoJitter = [state runNumberForKey:@"jitter"] ?: @3;
                 if (ping) ping.text = demoPing.stringValue;
@@ -371,13 +491,14 @@ static void SPStartOfflineDemo(id controller) {
 // completes.
 static void SPScheduleLiveLabelFallback(id controller, SPDirection direction) {
     SPState *state = SPState.shared;
+    const NSUInteger generation = state.runGeneration;
     if (!controller || !state.testActive || ![state runHasSpeedOverrideForDirection:direction]) return;
     NSInteger expectedStage = direction == SPDirectionDownload ? SPStageDownload : SPStageUpload;
     __weak id weakController = controller;
     for (NSInteger frame = 0; frame < 160; frame++) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(frame * 100 * NSEC_PER_MSEC)), dispatch_get_main_queue(), ^{
             id strongController = weakController;
-            if (!strongController || !state.testActive || state.stage != expectedStage ||
+            if (!strongController || !state.testActive || state.runGeneration != generation || state.stage != expectedStage ||
                 ![state runHasSpeedOverrideForDirection:direction]) return;
             NSString *getter = direction == SPDirectionDownload ? @"downloadResult" : @"uploadResult";
             UILabel *label = SPDisplayLabel(strongController, getter);
@@ -1066,7 +1187,8 @@ static void SPRepairNativeSetupControlsInView(UIView *view, UIViewController *fa
             if ([owner respondsToSelector:action]) {
                 BOOL hasTouchAction = NO;
                 for (id target in button.allTargets) {
-                    if ([button actionsForTarget:target forControlEvent:UIControlEventTouchUpInside].count) {
+                    if ([button actionsForTarget:target forControlEvent:UIControlEventTouchUpInside].count ||
+                        [button actionsForTarget:target forControlEvent:UIControlEventPrimaryActionTriggered].count) {
                         hasTouchAction = YES;
                         break;
                     }
@@ -1074,7 +1196,7 @@ static void SPRepairNativeSetupControlsInView(UIView *view, UIViewController *fa
                 if (!hasTouchAction) {
                     [button addTarget:owner
                                action:action
-                     forControlEvents:(UIControlEventTouchUpInside | UIControlEventPrimaryActionTriggered)];
+                     forControlEvents:UIControlEventTouchUpInside];
                 }
                 // Keep the native page usable if an earlier custom layout
                 // pass accidentally left the stock control disabled.
@@ -1503,6 +1625,7 @@ static void HookSetJitterResult(id self, SEL _cmd, id value) {
 
 static void (*OrigGaugeBegin)(id, SEL, id, id);
 static void HookGaugeBegin(id self, SEL _cmd, id sender, id event) {
+    if (SPState.shared.testActive && [SPState.shared runBoolForKey:@"offline_mode"]) return;
     [SPState.shared beginTest];
     if ([SPState.shared runBoolForKey:@"offline_mode"]) {
         SPStartOfflineDemo(self);
@@ -1745,16 +1868,16 @@ static void HookSaveReportAsResult(id self, SEL _cmd, id report) {
 }
 
 static void SPHook(Class cls, NSString *selectorName, IMP replacement, IMP *original) {
-    if (!cls) return;
-    SEL selector = NSSelectorFromString(selectorName);
-    if (!class_getInstanceMethod(cls, selector)) return;
-    Method method = class_getInstanceMethod(cls, selector);
-    if (original) *original = method_getImplementation(method);
-    method_setImplementation(method, replacement);
+    // Lifecycle selectors may be inherited. Mutating their superclass method
+    // applies our hooks to unrelated setup screens and can recurse at launch.
+    SPHookLocal(cls, selectorName, replacement, original);
 }
 
 __attribute__((constructor)) static void SpeedtestPlusInitialize(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
+        [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidEnterBackgroundNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *notification) {
+            if (SPState.shared.testActive && [SPState.shared runBoolForKey:@"offline_mode"]) [SPState.shared cancelTest];
+        }];
         Class speed = NSClassFromString(@"_TtC9SpeedTest23SpeedTestViewController");
         SPHook(speed, @"viewDidLoad", (IMP)HookSpeedViewDidLoad, (IMP *)&OrigSpeedViewDidLoad);
         SPHook(speed, @"viewWillAppear:", (IMP)HookSpeedViewWillAppear, (IMP *)&OrigSpeedViewWillAppear);

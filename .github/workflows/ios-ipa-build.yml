@@ -47,7 +47,7 @@ jobs:
           "$RUNNER_TEMP/speedtestplus-venv/bin/python" Scripts/build_unsigned_ipa.py \
             --input "$RUNNER_TEMP/SpeedtestPlus-base.ipa" \
             --dylib "${{ steps.dylib.outputs.path }}" \
-            --speedtest-plus-version "0.1.25" \
+            --speedtest-plus-version "0.1.26" \
             --output "$RUNNER_TEMP/SpeedtestPlus.ipa"
           "$RUNNER_TEMP/speedtestplus-venv/bin/python" Scripts/inspect_ipa.py \
             "$RUNNER_TEMP/SpeedtestPlus.ipa" \
@@ -57,7 +57,7 @@ jobs:
       - name: Upload build evidence
         uses: actions/upload-artifact@v4
         with:
-          name: SpeedtestPlus-iOS-0.1.25-for-docs-release
+          name: SpeedtestPlus-iOS-0.1.26-for-docs-release
           path: |
             ${{ runner.temp }}/SpeedtestPlus.ipa
             ${{ runner.temp }}/ipa-report.json

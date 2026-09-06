@@ -19,6 +19,7 @@ FOUNDATION_EXPORT NSString * const SPThemeDidChangeNotification;
 /// User preference OR the device's system Reduce Motion accessibility setting.
 @property(nonatomic, readonly) BOOL reduceMotionEnabled;
 @property(nonatomic, readonly, getter=isTestActive) BOOL testActive;
+@property(nonatomic, readonly) NSUInteger runGeneration;
 @property(nonatomic, readonly, nullable) NSString *lastPromptedUpdateVersion;
 
 + (instancetype)shared;
@@ -38,6 +39,7 @@ FOUNDATION_EXPORT NSString * const SPThemeDidChangeNotification;
 - (void)deleteProfileAtIndex:(NSInteger)index;
 
 - (void)beginTest;
+- (void)cancelTest;
 - (void)setStage:(NSInteger)stage;
 - (NSInteger)stage;
 - (BOOL)hasSpeedOverrideForDirection:(SPDirection)direction;

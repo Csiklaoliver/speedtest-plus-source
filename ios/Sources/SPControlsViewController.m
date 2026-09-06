@@ -439,7 +439,7 @@
     }
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Speedtest+" message:message preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
-    [self presentViewController:alert animated:YES completion:nil];
+    [self presentAfterCurrentAlertDismisses:alert];
 }
 
 - (void)presentAfterCurrentAlertDismisses:(UIViewController *)controller {
@@ -575,7 +575,7 @@
     UIAlertController *confirm = [UIAlertController alertControllerWithTitle:@"Delete profile?" message:@"This cannot be undone." preferredStyle:UIAlertControllerStyleAlert];
     [confirm addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
     [confirm addAction:[UIAlertAction actionWithTitle:@"Delete" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) { [SPState.shared deleteProfileAtIndex:index]; }]];
-    [self presentViewController:confirm animated:YES completion:nil];
+    [self presentAfterCurrentAlertDismisses:confirm];
 }
 
 - (void)configureLock {
