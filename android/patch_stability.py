@@ -94,6 +94,20 @@ def patches(tree):
             raise ValueError('Unrecognized coordinator animator hook')
         body = body.replace(before, after, 1)
     files[coordinator] = source[:start] + body + source[end:]
+    controller_path = tree / controller
+    if '.method public speedPlusOfflineFailed()V' not in files[controller_path]:
+        files[controller_path] += '''
+.method public speedPlusOfflineFailed()V
+    .locals 2
+    const/16 v0, 0x80
+    invoke-virtual {p0, v0}, Lcom/ookla/mobile4/app/ic;->G(I)V
+    iget-object v0, p0, Lcom/ookla/mobile4/app/ic;->d:Lcom/ookla/mobile4/app/ic$b;
+    new-instance v1, Ljava/lang/Exception;
+    invoke-direct {v1}, Ljava/lang/Exception;-><init>()V
+    invoke-virtual {v0, v1}, Lcom/ookla/mobile4/app/ic$b;->l(Ljava/lang/Exception;)V
+    return-void
+.end method
+'''
     return files
 
 if __name__ == '__main__':

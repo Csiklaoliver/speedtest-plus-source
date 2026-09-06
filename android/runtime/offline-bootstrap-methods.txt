@@ -26,6 +26,11 @@
     if-nez p2, :lookup
     # Attach the native gauge before resolving its lazily-created coordinator.
     invoke-virtual {p0}, Lcom/ookla/mobile4/app/ic;->speedPlusPrepareOffline()V
+    const/4 v0, 0x1
+    invoke-virtual {p0, v0}, Lcom/ookla/mobile4/app/ic;->s(I)V
+    const/4 v1, 0x0
+    const-wide/16 v2, 0x0
+    invoke-virtual {p0, v0, v1, v2, v3}, Lcom/ookla/mobile4/app/ic;->speedPlusOfflineReading(IFJ)V
     :lookup
     sget-object v0, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator;->coordinatorRef:Ljava/lang/ref/WeakReference;
     if-eqz v0, :retry
@@ -54,8 +59,7 @@
     :cancel
     invoke-static {}, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator;->cancelOffline()V
     if-eqz p0, :done
-    const/16 v0, 0x80
-    invoke-virtual {p0, v0}, Lcom/ookla/mobile4/app/ic;->G(I)V
+    invoke-virtual {p0}, Lcom/ookla/mobile4/app/ic;->speedPlusOfflineFailed()V
     :done
     return-void
 .end method
