@@ -78,6 +78,15 @@ An experimental second bootstrap was removed after emulator repeat-test coverage
 exposed overlapping native opening animations. The final candidate uses the
 existing single start sequence; Test Again is routed into that same sequence.
 
+Further cold-start coverage found that the original runner silently abandoned
+startup when its pre-GO weak gauge reference was absent. The next candidate
+defers gauge lookup until after exactly one initial reading creates the test
+view, and schedules upload only after that initialization. Regression coverage
+checks ordering, a single initial reading, and patch idempotence. This change
+still requires successful cold-start and repeat-test emulator runs before release.
+For an already patched decoded candidate, apply `patch_stability.py --deferred-only`;
+do not assume differently commented hand-edited hooks match the full patcher.
+
 Static contracts and syntax checks do not prove UIKit or Dalvik runtime behavior.
 Test fresh/returning startup, optional permission denial, provider controls,
 profile save/load, two consecutive tests, cancel/restart, background/foreground,

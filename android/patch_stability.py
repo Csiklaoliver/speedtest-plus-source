@@ -117,13 +117,77 @@ def patches(tree):
             raise ValueError('Unrecognized coordinator animator hook')
         body = body.replace(before, after, 1)
     files[coordinator] = source[:start] + body + source[end:]
+    return deferred_patches(tree, files)
+
+def deferred_patches(tree, files=None):
+    files = {} if files is None else files
+    base = 'smali_classes6/tech/oliverprojects/speedtestplus/telemetry/'
+    animator = tree / (base + 'SpeedPlusLiveAnimator.smali')
+    # Resolve the current gauge only after the first reading creates its view.
+    # Upload is scheduled by OfflineStart, never against a stale pre-GO view.
+    source = files.get(animator, animator.read_text(encoding='utf-8'))
+    signature = '.method public static declared-synchronized startOffline('
+    start = source.index(signature)
+    end = source.index('.end method', start)
+    body = source[start:end]
+    if '# sp_deferred_view' not in body:
+        first = body.index(f'    sget-object v1, {ANIM}->coordinatorRef:')
+        last = body.index('    :cond_2', first)
+        body = body[:first] + f'''    # sp_deferred_view
+    const/4 v1, 0x0
+    new-instance v2, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator$OfflineStart;
+    invoke-direct {{v2, p0, v1, v0}}, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator$OfflineStart;-><init>(Lcom/ookla/mobile4/app/ic;Ljava/lang/Object;I)V
+    sget-object v3, {ANIM}->MAIN:Landroid/os/Handler;
+    const-wide/16 v4, 0x384
+    invoke-virtual {{v3, v2, v4, v5}}, Landroid/os/Handler;->postDelayed(Ljava/lang/Runnable;J)Z
+
+''' + body[last:]
+        source = source[:start] + body + source[end:]
+    if '.method public static offlineCoordinator()Ljava/lang/Object;' not in source:
+        source += f'''
+.method public static offlineCoordinator()Ljava/lang/Object;
+    .locals 1
+    sget-object v0, {ANIM}->coordinatorRef:Ljava/lang/ref/WeakReference;
+    if-eqz v0, :ready
+    invoke-virtual {{v0}}, Ljava/lang/ref/WeakReference;->get()Ljava/lang/Object;
+    move-result-object v0
+    :ready
+    return-object v0
+.end method
+'''
+    files[animator] = source
+    runner = tree / (base + 'SpeedPlusLiveAnimator$OfflineStart.smali')
+    source = runner.read_text(encoding='utf-8')
+    if '# sp_resolve_after_reading' not in source:
+        start = source.index('    iget-object v2, p0,')
+        end = source.index('    invoke-virtual {v1}, Lcom/ookla/mobile4/app/ic;->speedPlusPrepareOffline()V', start)
+        source = source[:start] + '    check-cast v1, Lcom/ookla/mobile4/app/ic;\n\n' + source[end:]
+        marker = '    invoke-virtual {v1, v3, v4, v5, v6}, Lcom/ookla/mobile4/app/ic;->speedPlusOfflineReading(IFJ)V'
+        source = source.replace(marker, marker + f'''
+    # sp_resolve_after_reading
+    invoke-static {{}}, {ANIM}->offlineCoordinator()Ljava/lang/Object;
+    move-result-object v2
+    if-eqz v2, :cancel
+    check-cast v2, Lcom/ookla/mobile4/views/coordinators/a;
+''', 1)
+        marker = '    invoke-virtual {v2}, Lcom/ookla/mobile4/views/coordinators/a;->x()V'
+        source = source.replace(marker, marker + f'''
+    new-instance v3, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator$OfflineUpload;
+    invoke-direct {{v3, v1, v2, v0}}, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator$OfflineUpload;-><init>(Lcom/ookla/mobile4/app/ic;Ljava/lang/Object;I)V
+    invoke-static {{}}, {ANIM}->access$100()Landroid/os/Handler;
+    move-result-object v4
+    const-wide/16 v5, 0x1388
+    invoke-virtual {{v4, v3, v5, v6}}, Landroid/os/Handler;->postDelayed(Ljava/lang/Runnable;J)Z
+''', 1)
+    files[runner] = source
     return files
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('decoded_tree', type=Path)
+    parser.add_argument('--deferred-only', action='store_true', help='Apply the view-readiness fix to an already patched candidate')
     args = parser.parse_args()
-    planned = patches(args.decoded_tree)
+    planned = deferred_patches(args.decoded_tree) if args.deferred_only else patches(args.decoded_tree)
     for path, source in planned.items():
         path.write_text(source, encoding='utf-8')
     print(f'Patched {len(planned)} runtime files; rebuild, repack, align and sign next.')
