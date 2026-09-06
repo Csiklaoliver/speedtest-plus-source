@@ -87,6 +87,20 @@ still requires successful cold-start and repeat-test emulator runs before releas
 For an already patched decoded candidate, apply `patch_stability.py --deferred-only`;
 do not assume differently commented hand-edited hooks match the full patcher.
 
+### Current verification snapshot
+
+- Source regression suite: 11 Android tests and 4 public-package tests pass.
+- Deferred-view APK: built, zip alignment verified, signature verified against
+  the existing release certificate. SHA-256:
+  `32f6cfbf727febc4b7402336012e06f84ba795d928a0e2ddc4f1237b0e16198f`.
+- Earlier minimal candidate reproduced a blank test area after GO. Earlier
+  bootstrap candidate reproduced an overlapping-animation exception on repeat.
+  Neither is approved for release.
+- Deferred-view candidate: emulator installation encountered overlapping pending
+  package installs; emulator restarted without wiping application data. Runtime
+  acceptance remains pending. Do not promote stable OTA based on build checks.
+- iOS 0.1.26 compiled successfully; physical-device acceptance remains pending.
+
 Static contracts and syntax checks do not prove UIKit or Dalvik runtime behavior.
 Test fresh/returning startup, optional permission denial, provider controls,
 profile save/load, two consecutive tests, cancel/restart, background/foreground,
