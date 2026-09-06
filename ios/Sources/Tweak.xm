@@ -22,7 +22,6 @@ static const NSInteger SPBadgeTag = 0x53505032;
 static const NSInteger SPProviderHotspotTag = 0x53505033;
 static const void *SPObserverTokenKey = &SPObserverTokenKey;
 static const void *SPProviderLayoutRetryKey = &SPProviderLayoutRetryKey;
-static const void *SPProviderFallbackTargetKey = &SPProviderFallbackTargetKey;
 
 static id SPObject(id object, SEL selector);
 
@@ -750,7 +749,6 @@ static void SPRemoveCustomSurfacesForNativeSetup(UIViewController *controller) {
     SPRemoveCustomViewsWithTag(controller.view, SPProviderHotspotTag);
     SPRemoveCustomGestures(controller.view);
     objc_setAssociatedObject(controller, SPActionTargetKey, nil, OBJC_ASSOCIATION_ASSIGN);
-    objc_setAssociatedObject(controller, SPProviderFallbackTargetKey, nil, OBJC_ASSOCIATION_ASSIGN);
     SPRepairNativeSetupControls(SPTopController(controller) ?: controller);
     [controller.view setNeedsLayout];
 }
@@ -790,140 +788,6 @@ static UIButton *SPInstallProviderHotspot(UIViewController *presenter, UIView *p
     return hotspot;
 }
 
-// The provider host is private UIKit/Swift code and has changed shape across
-// minor Speedtest releases.  When its class or accessors are renamed, the
-// selector hooks above cannot find an anchor even though the native provider
-// row is already on screen.  Pick a conservative, bottom-row text label as a
-// last-resort anchor.  This never replaces the native provider/server
-// controls: the custom button is a small sibling of the label and its gesture
-// recognizer does not cancel touches in the row.
-static BOOL SPFallbackLabelIsUsable(UILabel *label) {
-    if (![label isKindOfClass:UILabel.class] || label.hidden || label.alpha < 0.05) return NO;
-    NSString *text = [label.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    if (!text.length || text.length > 64) return NO;
-    NSString *lower = text.lowercaseString;
-    // Survey/question labels can sit below the provider row and are often
-    // hosted by generic UIView subclasses.  Exclude their actual text too,
-    // otherwise the hierarchy fallback can attach the controls affordance to
-    // the feedback card instead of the ISP row on a rebuilt UI.
-    for (NSString *excluded in @[@"download", @"upload", @"ping", @"jitter", @"mbps", @"feedback", @"speedtest", @"video", @"map", @"downdetector", @"how would", @"how does", @"expectation", @"compare your", @"rate "]) {
-        if ([lower containsString:excluded]) return NO;
-    }
-    // Device model labels commonly look like SM-S928B or contain only
-    // digits/punctuation.  Prefer the ISP text rather than that second line.
-    if ([text rangeOfCharacterFromSet:NSCharacterSet.letterCharacterSet].location == NSNotFound) return NO;
-    if ([text containsString:@"-"] && [text rangeOfCharacterFromSet:NSCharacterSet.decimalDigitCharacterSet].location != NSNotFound) return NO;
-    return YES;
-}
-
-static BOOL SPFallbackLabelIsInNonProviderSurface(UILabel *label, UIViewController *controller) {
-    UIView *cursor = label.superview;
-    while (cursor && cursor != controller.view) {
-        NSString *name = NSStringFromClass(cursor.class).lowercaseString;
-        // Never put the entry point in the feedback survey, tab bar, or a
-        // navigation/guide surface merely because it happens to be lower on
-        // screen than the provider row.
-        for (NSString *excluded in @[@"feedback", @"survey", @"question", @"tabbar", @"navigation", @"guide"]) {
-            if ([name containsString:excluded]) return YES;
-        }
-        cursor = cursor.superview;
-    }
-    return NO;
-}
-
-static UILabel *SPFallbackProviderLabel(UIViewController *controller) {
-    if (![controller isKindOfClass:UIViewController.class] || !controller.view) return nil;
-    NSMutableArray<UILabel *> *labels = [NSMutableArray array];
-    SPCollectLabels(controller.view, labels);
-    CGRect bounds = controller.view.bounds;
-    UILabel *best = nil;
-    CGRect bestRect = CGRectZero;
-    for (UILabel *label in labels) {
-        if (!SPFallbackLabelIsUsable(label) || !label.superview) continue;
-        if (SPFallbackLabelIsInNonProviderSurface(label, controller)) continue;
-        CGRect rect = [label.superview convertRect:label.frame toView:controller.view];
-        if (CGRectIsNull(rect) || CGRectIsInfinite(rect) || rect.size.width < 24.0 || CGRectGetMidY(rect) < bounds.size.height * 0.55) continue;
-        // The ISP row is the lowest text cluster in the speed card.  Prefer
-        // the leftmost label when ISP and server labels share a baseline.
-        if (!best || rect.origin.y > bestRect.origin.y + 16.0 ||
-            (fabs(rect.origin.y - bestRect.origin.y) <= 16.0 && rect.origin.x < bestRect.origin.x)) {
-            best = label;
-            bestRect = rect;
-        }
-    }
-    return best;
-}
-
-static UIButton *SPInstallFallbackProviderButton(UIViewController *controller, UILabel *ispLabel) {
-    if (![controller isKindOfClass:UIViewController.class] || ![ispLabel isKindOfClass:UILabel.class]) return nil;
-    UIView *row = ispLabel.superview;
-    if (![row isKindOfClass:UIView.class]) return nil;
-    // Keep the stable speed controller as the weak target owner.  Resolving
-    // SPPresenter here could capture a transient native setup sheet; after it
-    // is dismissed that sheet is gone and the button would lose its action.
-    UIViewController *presenter = controller;
-    if (!presenter) return nil;
-    [SPConnectionHealth noteNativeServerListReady:YES];
-
-    UIButton *existing = [controller.view viewWithTag:SPButtonTag];
-    if (existing) return existing;
-    SPActionTarget *target = [SPActionTarget new];
-    target.presenter = presenter;
-    objc_setAssociatedObject(controller, SPProviderFallbackTargetKey, target, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-
-    UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
-    button.tag = SPButtonTag;
-    button.translatesAutoresizingMaskIntoConstraints = NO;
-    button.tintColor = ispLabel.textColor ?: UIColor.whiteColor;
-    button.titleLabel.font = [UIFont systemFontOfSize:22 weight:UIFontWeightSemibold];
-    if (@available(iOS 13.0, *)) {
-        UIImage *image = [UIImage systemImageNamed:@"info.circle"];
-        if (image) [button setImage:image forState:UIControlStateNormal];
-        else [button setTitle:@"\u24d8" forState:UIControlStateNormal];
-    } else {
-        [button setTitle:@"\u24d8" forState:UIControlStateNormal];
-    }
-    button.accessibilityLabel = @"Open Speedtest+ information and controls";
-    button.accessibilityHint = SPState.shared.panelHidden
-        ? @"Unlocks the password-protected Speedtest+ controls"
-        : @"Opens the Speedtest+ guide and controls";
-    button.accessibilityIdentifier = @"speedtest_plus_provider_info_fallback";
-    button.backgroundColor = UIColor.clearColor;
-    button.alpha = 1.0;
-    button.userInteractionEnabled = YES;
-    [SPTheme applyFunctionalMaterialToView:button theme:[SPTheme themeAtIndex:SPState.shared.themeIndex]];
-    [button.widthAnchor constraintEqualToConstant:48].active = YES;
-    [button.heightAnchor constraintEqualToConstant:48].active = YES;
-    [button addTarget:target action:@selector(openGuide) forControlEvents:UIControlEventTouchUpInside];
-
-    if ([row isKindOfClass:UIStackView.class] && [((UIStackView *)row).arrangedSubviews containsObject:ispLabel]) {
-        UIStackView *stack = (UIStackView *)row;
-        NSUInteger index = [stack.arrangedSubviews indexOfObject:ispLabel];
-        [stack insertArrangedSubview:button atIndex:MIN(index + 1, stack.arrangedSubviews.count)];
-    } else {
-        [row addSubview:button];
-        [NSLayoutConstraint activateConstraints:@[
-            [button.leadingAnchor constraintEqualToAnchor:ispLabel.trailingAnchor constant:6.0],
-            [button.centerYAnchor constraintEqualToAnchor:ispLabel.centerYAnchor],
-            [button.trailingAnchor constraintLessThanOrEqualToAnchor:row.trailingAnchor constant:-4.0]
-        ]];
-    }
-    SPInstallProviderLongPress(row, target);
-    SPInstallProviderLongPress(ispLabel, target);
-    SPInstallProviderHotspot(presenter, row, ispLabel, target);
-    [row bringSubviewToFront:button];
-    return button;
-}
-
-static void SPAttachFallbackProviderControls(UIViewController *controller) {
-    if (![controller isKindOfClass:UIViewController.class]) return;
-    if (SPHasNativeSetupSurface(controller)) return;
-    UILabel *label = SPFallbackProviderLabel(controller);
-    if (!label) return;
-    if ([controller.view viewWithTag:SPButtonTag]) return;
-    SPInstallFallbackProviderButton(controller, label);
-}
-
 static void SPRemoveLegacyFloatingControls(UIViewController *controller) {
     if (![controller isKindOfClass:UIViewController.class]) return;
     // Builds before 0.1.3 placed the controls in the lower-right corner of
@@ -936,24 +800,20 @@ static void SPRemoveLegacyFloatingControls(UIViewController *controller) {
 }
 
 static void SPAttachControls(UIViewController *controller) {
-    // Keep the main gauge surface entirely native.  Speedtest+ opens from the
-    // provider-row info button, with the provider-row long press as a fallback.
+    // Keep the main gauge surface entirely native. Speedtest+ is inserted only
+    // after the real ISPHostController exposes its ISP label and provider row.
+    // If that private anchor changes, fail closed instead of guessing a label
+    // and creating a floating button on an unrelated host surface.
     SPRemoveLegacyFloatingControls(controller);
-    SPAttachFallbackProviderControls(controller);
 }
 
 static void SPAttachProviderControls(id hostController, UIStackView *stack) {
-    UIView *ispView = SPObject(hostController, NSSelectorFromString(@"ispView"));
     UILabel *ispLabel = SPLabel(hostController, @"ispNameLabel");
-    // A few iOS builds return nil for the private ispView accessor even though
-    // the label is already attached.  Use its row as a safe provider-only
-    // fallback instead of abandoning the controls entry point.  If the label
-    // accessor itself changed, the provider host/stack is still a safe custom
-    // anchor for the Speedtest+ button and gesture.
-    if (![ispView isKindOfClass:UIView.class] && [ispLabel.superview isKindOfClass:UIView.class]) ispView = ispLabel.superview;
-    if (![ispView isKindOfClass:UIView.class] && [stack isKindOfClass:UIView.class]) ispView = stack;
-    if (![ispView isKindOfClass:UIView.class]) return;
-    UIViewController *presenter = SPViewControllerForView(ispView);
+    UIView *providerRow = [ispLabel.superview isKindOfClass:UIView.class] ? ispLabel.superview : nil;
+    // Never add a visible entry point to the host view or an inferred public
+    // label. The confirmed ISP label's own row is the only valid container.
+    if (![ispLabel isKindOfClass:UILabel.class] || !providerRow) return;
+    UIViewController *presenter = SPViewControllerForView(providerRow);
     if (!presenter) return;
     if (SPHasNativeSetupSurface(presenter)) {
         SPRemoveCustomSurfacesForNativeSetup(presenter);
@@ -963,7 +823,7 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
 
     UIButton *existing = [presenter.view viewWithTag:SPButtonTag];
     UILabel *existingBadge = [presenter.view viewWithTag:SPBadgeTag];
-    if (existing && !SPViewIsDescendantOf(existing, ispView) && !SPViewIsDescendantOf(existing, stack)) {
+    if (existing && !SPViewIsDescendantOf(existing, providerRow)) {
         [existing removeFromSuperview];
         [existingBadge removeFromSuperview];
         existing = nil;
@@ -977,10 +837,9 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
         objc_setAssociatedObject(hostController, SPActionTargetKey, target, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         [existing removeTarget:nil action:NULL forControlEvents:UIControlEventTouchUpInside];
         [existing addTarget:target action:@selector(openGuide) forControlEvents:UIControlEventTouchUpInside];
-        SPInstallProviderLongPress(ispView, target);
+        SPInstallProviderLongPress(providerRow, target);
         SPInstallProviderLongPress(ispLabel, target);
-        if (ispLabel.superview != ispView) SPInstallProviderLongPress(ispLabel.superview, target);
-        SPInstallProviderHotspot(presenter, ispView, ispLabel, target);
+        SPInstallProviderHotspot(presenter, providerRow, ispLabel, target);
         SPApplyProviderLabels(hostController);
         SPRefreshBadge(presenter);
         return;
@@ -1031,36 +890,22 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
         [badge.bottomAnchor constraintEqualToAnchor:button.topAnchor constant:2]
     ]];
 
-    UIView *ispRow = ispLabel.superview;
-    if ([ispLabel isKindOfClass:UILabel.class] && [ispRow isKindOfClass:UIStackView.class] && [((UIStackView *)ispRow).arrangedSubviews containsObject:ispLabel]) {
-        UIStackView *row = (UIStackView *)ispRow;
+    if ([providerRow isKindOfClass:UIStackView.class] && [((UIStackView *)providerRow).arrangedSubviews containsObject:ispLabel]) {
+        UIStackView *row = (UIStackView *)providerRow;
         NSUInteger labelIndex = [row.arrangedSubviews indexOfObject:ispLabel];
         [row insertArrangedSubview:button atIndex:MIN(labelIndex + 1, row.arrangedSubviews.count)];
-    } else if (![ispLabel isKindOfClass:UILabel.class]) {
-        // The label getter is private and has changed between app builds.  A
-        // trailing button on the provider host keeps the custom entry point
-        // available without changing any stock server controls.
-        [ispView addSubview:button];
-        [NSLayoutConstraint activateConstraints:@[
-            [button.trailingAnchor constraintEqualToAnchor:ispView.trailingAnchor constant:-4],
-            [button.centerYAnchor constraintEqualToAnchor:ispView.centerYAnchor]
-        ]];
     } else {
-        UIView *container = [ispRow isKindOfClass:UIView.class] && SPViewIsDescendantOf(ispLabel, ispRow) ? ispRow : ispView;
-        [container addSubview:button];
+        [providerRow addSubview:button];
         [NSLayoutConstraint activateConstraints:@[
             [button.leadingAnchor constraintEqualToAnchor:ispLabel.trailingAnchor constant:6],
             [button.centerYAnchor constraintEqualToAnchor:ispLabel.centerYAnchor],
-            [button.trailingAnchor constraintLessThanOrEqualToAnchor:container.trailingAnchor constant:-4]
+            [button.trailingAnchor constraintLessThanOrEqualToAnchor:providerRow.trailingAnchor constant:-4]
         ]];
     }
 
-    UIView *providerView = ispView;
+    UIView *providerView = providerRow;
     SPInstallProviderLongPress(providerView, target);
-    if ([ispLabel isKindOfClass:UILabel.class]) {
-        SPInstallProviderLongPress(ispLabel, target);
-        if (ispLabel.superview != providerView) SPInstallProviderLongPress(ispLabel.superview, target);
-    }
+    SPInstallProviderLongPress(ispLabel, target);
     SPInstallProviderHotspot(presenter, providerView, ispLabel, target);
     __weak UIViewController *weakPresenter = presenter;
     __weak id weakHost = hostController;
@@ -1103,15 +948,13 @@ static void SPFindProviderControlsInView(UIView *view) {
 static void SPRetryProviderControls(UIViewController *controller) {
     if (![controller isKindOfClass:UIViewController.class]) return;
     __weak UIViewController *weakController = controller;
-    // The provider row is lazy on some iOS 17/18 devices.  Keep the normal
-    // private-host retries, then run the public-view fallback after the row
-    // has had time to finish its first layout pass.
+    // The provider row is lazy on some iOS 17/18 devices. Keep bounded retries
+    // for the confirmed private host, but never fall back to arbitrary labels.
     for (NSNumber *delay in @[@0.0, @0.25, @0.75, @1.5, @2.5]) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             UIViewController *strongController = weakController;
             if (!strongController) return;
             SPFindProviderControlsInView(strongController.view);
-            if (delay.doubleValue >= 2.5) SPAttachFallbackProviderControls(strongController);
         });
     }
 }
@@ -1315,10 +1158,8 @@ static void SPAttachProviderControlsAfterLayout(UIViewController *controller) {
     if (last && now - last.doubleValue < 0.25) return;
     objc_setAssociatedObject(controller, SPProviderLayoutRetryKey, @(now), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     SPFindProviderControlsInView(controller.view);
-    // A renamed private host can make every selector hook a no-op.  Once the
-    // visible speed card has laid out, repair the provider-row affordance from
-    // the public UIView/UILabel hierarchy instead of adding a floating button.
-    if (![controller.view viewWithTag:SPButtonTag]) SPAttachFallbackProviderControls(controller);
+    // A renamed private host now fails closed. Never infer a provider row from
+    // arbitrary labels because that can place the button on the gauge/cards.
 }
 
 static BOOL SPIsScopedController(UIViewController *controller) {
@@ -1868,8 +1709,14 @@ static void HookSaveReportAsResult(id self, SEL _cmd, id report) {
 }
 
 static void SPHook(Class cls, NSString *selectorName, IMP replacement, IMP *original) {
-    // Lifecycle selectors may be inherited. Mutating their superclass method
-    // applies our hooks to unrelated setup screens and can recurse at launch.
+    // Never mutate the superclass method returned by class_getInstanceMethod.
+    // Several Speedtest controllers inherit UIKit lifecycle methods instead
+    // of implementing them locally. Calling method_setImplementation on that
+    // inherited Method replaces UIViewController's implementation globally,
+    // causing unrelated launch/onboarding controllers to run Speedtest+ hooks
+    // and potentially preventing the native startup flow from completing.
+    // SPHookLocal adds a class-scoped override when the selector is inherited
+    // and captures the actual superclass implementation for the hook to call.
     SPHookLocal(cls, selectorName, replacement, original);
 }
 

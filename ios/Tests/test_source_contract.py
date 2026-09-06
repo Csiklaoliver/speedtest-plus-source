@@ -29,7 +29,7 @@ class SourceContractTests(unittest.TestCase):
     def test_all_hooks_are_class_local(self):
         hook = TWEAK[TWEAK.index("static void SPHook(Class"):TWEAK.index("__attribute__((constructor))")]
         self.assertIn("SPHookLocal(cls, selectorName, replacement, original)", hook)
-        self.assertNotIn("method_setImplementation", hook)
+        self.assertNotIn("method_setImplementation(method, replacement)", hook)
 
     def test_offline_has_its_own_renderable_controller(self):
         self.assertIn("@implementation SPOfflineViewController", TWEAK)
@@ -69,7 +69,8 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("connectedScenes", TWEAK)
         fallback = TWEAK[TWEAK.index("static void SPAttachControls"):TWEAK.index("static void SPAttachProviderControls")]
         self.assertNotIn("UILongPressGestureRecognizer", fallback)
-        self.assertIn("SPAttachFallbackProviderControls", fallback)
+        self.assertNotIn("SPAttachFallbackProviderControls", fallback)
+        self.assertIn("fail closed", fallback)
         self.assertNotIn("rightBarButtonItems", fallback)
         self.assertNotIn("SPControlBarItemKey", TWEAK)
 
@@ -81,8 +82,10 @@ class SourceContractTests(unittest.TestCase):
     def test_provider_info_icon_is_attached_to_isp_row(self):
         provider = TWEAK[TWEAK.index("static void SPAttachProviderControls"):TWEAK.index("static BOOL SPIsScopedController")]
         self.assertIn('SPLabel(hostController, @"ispNameLabel")', provider)
+        self.assertIn("UIView *providerRow =", provider)
         self.assertIn('systemImageNamed:@"info.circle"', provider)
         self.assertIn("insertArrangedSubview:button", provider)
+        self.assertIn("[providerRow addSubview:button]", provider)
         self.assertNotIn('setTitle:@"S+  i"', provider)
 
     def test_provider_controls_retry_and_rebind_after_guide(self):
@@ -124,12 +127,20 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("if (SPHasNativeSetupSurface(controller)) return;", badge)
         self.assertIn("if (!SPHasNativeSetupSurface((UIViewController *)self))", TWEAK)
 
+    def test_runtime_hooks_never_replace_inherited_uikit_methods_globally(self):
+        hook = TWEAK[TWEAK.index("static void SPHook(Class cls"):
+                     TWEAK.index("__attribute__((constructor))")]
+        self.assertIn("SPHookLocal(cls, selectorName, replacement, original)", hook)
+        self.assertNotIn("method_setImplementation(method, replacement)", hook)
+
     def test_update_version_matches_current_ipa(self):
         self.assertIn('SPCurrentVersion = @"0.1.26"', UPDATER)
         self.assertIn('parser.add_argument("--speedtest-plus-version", required=True)', BUILDER)
         self.assertIn('plist["SpeedtestPlusVersion"] = args.speedtest_plus_version', BUILDER)
         self.assertIn('"speedtest_plus_version": info.get("SpeedtestPlusVersion")', INSPECTOR)
         self.assertIn('--speedtest-plus-version "0.1.26"', WORKFLOW)
+        self.assertIn('TARGET=iphone:clang:16.5:12.0', WORKFLOW)
+        self.assertIn('iPhoneOS16.5.sdk.tar.xz', WORKFLOW)
 
     def test_update_prompt_defers_to_native_setup_and_existing_modals(self):
         self.assertIn("SPIsNativeSetupController", UPDATER)
@@ -179,11 +190,11 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("speedtest_plus_controls_hotspot", TWEAK)
         self.assertIn("if (SPState.shared.panelHidden) SPPresentUnlock(host)", TWEAK)
 
-    def test_provider_anchor_survives_private_label_changes(self):
+    def test_provider_anchor_fails_closed_when_private_label_changes(self):
         provider = TWEAK[TWEAK.index("static void SPAttachProviderControls"):TWEAK.index("static BOOL SPIsScopedController")]
-        self.assertIn("[stack isKindOfClass:UIView.class]", provider)
-        self.assertIn("![ispLabel isKindOfClass:UILabel.class]", provider)
-        self.assertIn("button.trailingAnchor constraintEqualToAnchor:ispView.trailingAnchor", provider)
+        self.assertIn("![ispLabel isKindOfClass:UILabel.class] || !providerRow", provider)
+        self.assertNotIn("[ispView addSubview:button]", provider)
+        self.assertNotIn("SPFallbackProviderLabel", TWEAK)
 
     def test_provider_button_is_repaired_after_row_rebuild(self):
         layout = TWEAK[TWEAK.index("static void SPAttachProviderControlsAfterLayout"):TWEAK.index("static BOOL SPIsScopedController")]
@@ -191,24 +202,23 @@ class SourceContractTests(unittest.TestCase):
         self.assertIn("reparent stale controls", layout)
         self.assertNotIn("[controller.view viewWithTag:SPButtonTag]) return", layout)
 
-    def test_public_hierarchy_fallback_repairs_missing_provider_entry_point(self):
-        provider = TWEAK[TWEAK.index("static BOOL SPFallbackLabelIsUsable"):
-                         TWEAK.index("static void SPRemoveLegacyFloatingControls")]
-        self.assertIn("SPFallbackProviderLabel", provider)
-        self.assertIn("SPFallbackLabelIsInNonProviderSurface", provider)
-        self.assertIn('excluded in @[@"feedback"', provider)
-        self.assertIn("SPInstallFallbackProviderButton", provider)
-        self.assertIn('accessibilityIdentifier = @"speedtest_plus_provider_info_fallback"', provider)
-        self.assertIn("SPInstallProviderHotspot(presenter, row, ispLabel, target)", provider)
-        self.assertIn("button.alpha = 1.0", provider)
-        self.assertIn("SPAttachFallbackProviderControls(strongController)", TWEAK)
+    def test_public_hierarchy_never_creates_visible_provider_entry_point(self):
+        self.assertNotIn("SPFallbackProviderLabel", TWEAK)
+        self.assertNotIn("SPInstallFallbackProviderButton", TWEAK)
+        self.assertNotIn("speedtest_plus_provider_info_fallback", TWEAK)
+        self.assertNotIn("SPAttachFallbackProviderControls", TWEAK)
+        retry = TWEAK[TWEAK.index("static void SPRetryProviderControls"):
+                      TWEAK.index("static BOOL SPLooksLikeStockSetupController")]
+        self.assertIn("SPFindProviderControlsInView", retry)
+        self.assertIn("never fall back to arbitrary labels", retry)
         self.assertIn("@2.5", TWEAK)
 
-    def test_provider_fallback_rejects_survey_question_labels(self):
-        provider = TWEAK[TWEAK.index("static BOOL SPFallbackLabelIsUsable"):
-                         TWEAK.index("static BOOL SPFallbackLabelIsInNonProviderSurface")]
-        for text in ("how would", "how does", "expectation", "compare your", "rate "):
-            self.assertIn(text, provider)
+    def test_provider_button_cannot_attach_to_gauge_or_survey_labels(self):
+        provider = TWEAK[TWEAK.index("static void SPAttachProviderControls"):
+                         TWEAK.index("static void SPFindProviderControlsInView")]
+        self.assertIn('SPLabel(hostController, @"ispNameLabel")', provider)
+        self.assertIn("ispLabel.superview", provider)
+        self.assertNotIn("SPCollectLabels", provider)
 
     def test_feedback_prompt_is_rewritten_even_when_private_title_accessor_changes(self):
         start = TWEAK.index("static void HookFeedbackViewDidLoad")
