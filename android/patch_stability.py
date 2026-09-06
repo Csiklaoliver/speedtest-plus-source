@@ -74,7 +74,6 @@ def patches(tree):
 
 '''
         files[path] += '\n' + helper
-    runtime = Path(__file__).resolve().parent / 'runtime'
     animator = tree / (base + 'SpeedPlusLiveAnimator.smali')
     if '.method public static isOfflineUploadAnimating()Z' not in files[animator]:
         files[animator] += f'''
@@ -97,13 +96,6 @@ def patches(tree):
     const/16 v0, 0xff
     :sp_native_needle_alpha
 ''')
-    source = files[animator]
-    if '.method public static bootstrapOffline(' not in source:
-        start = source.index('.method public static declared-synchronized startOffline(')
-        end = source.index('.end method', start) + len('.end method')
-        files[animator] = source[:start] + (runtime / 'offline-bootstrap-methods.txt').read_text() + source[end:]
-    bootstrap = 'SpeedPlusLiveAnimator$Bootstrap.smali'
-    files[tree / (base + bootstrap)] = (runtime / bootstrap).read_text()
     coordinator = tree / 'smali_classes5/com/ookla/mobile4/views/coordinators/a.smali'
     source = coordinator.read_text()
     start = source.index('.method public x()V')
@@ -125,20 +117,6 @@ def patches(tree):
             raise ValueError('Unrecognized coordinator animator hook')
         body = body.replace(before, after, 1)
     files[coordinator] = source[:start] + body + source[end:]
-    controller_path = tree / controller
-    if '.method public speedPlusOfflineFailed()V' not in files[controller_path]:
-        files[controller_path] += '''
-.method public speedPlusOfflineFailed()V
-    .locals 2
-    const/16 v0, 0x80
-    invoke-virtual {p0, v0}, Lcom/ookla/mobile4/app/ic;->G(I)V
-    iget-object v0, p0, Lcom/ookla/mobile4/app/ic;->d:Lcom/ookla/mobile4/app/ic$b;
-    new-instance v1, Ljava/lang/Exception;
-    invoke-direct {v1}, Ljava/lang/Exception;-><init>()V
-    invoke-virtual {v0, v1}, Lcom/ookla/mobile4/app/ic$b;->l(Ljava/lang/Exception;)V
-    return-void
-.end method
-'''
     return files
 
 if __name__ == '__main__':

@@ -34,9 +34,6 @@ hook sites before writing. Keep a backup of the input decoded tree.
 - Native connecting-animation completion (`q`): return in offline mode instead
   of cancelling the active local generation and entering the real engine.
   This was observed as a repeat-test stall on the airplane-mode emulator.
-- Offline bootstrap: prepare the native test view before resolving the weak
-  gauge coordinator; retry attachment for at most two seconds, then reset the
-  UI instead of spinning forever. Old generations cannot bootstrap a newer run.
 - Offline gauge: use the same scale/delegate initialization as online, and
   allow the animation driver even when simulated speeds use blank/default inputs.
 - Test Again (`L`) uses GO's offline start (`M`) when offline is selected;
@@ -76,6 +73,10 @@ Android retains the base application's Android 7.0 / API 24 minimum.
 - Default offline readings animate too; each phase gets its full progress range.
 
 ## Required runtime gates
+
+An experimental second bootstrap was removed after emulator repeat-test coverage
+exposed overlapping native opening animations. The final candidate uses the
+existing single start sequence; Test Again is routed into that same sequence.
 
 Static contracts and syntax checks do not prove UIKit or Dalvik runtime behavior.
 Test fresh/returning startup, optional permission denial, provider controls,
