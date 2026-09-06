@@ -76,6 +76,27 @@ def patches(tree):
         files[path] += '\n' + helper
     runtime = Path(__file__).resolve().parent / 'runtime'
     animator = tree / (base + 'SpeedPlusLiveAnimator.smali')
+    if '.method public static isOfflineUploadAnimating()Z' not in files[animator]:
+        files[animator] += f'''
+.method public static isOfflineUploadAnimating()Z
+    .locals 1
+    sget-boolean v0, {ANIM}->offlineActive:Z
+    if-eqz v0, :done
+    sget-boolean v0, {ANIM}->uploadActive:Z
+    :done
+    return v0
+.end method
+'''
+    needle = 'smali_classes5/com/ookla/mobile4/views/gauge/g.smali'
+    before = '    iget v0, p0, Lcom/ookla/mobile4/views/gauge/g;->r:I'
+    patch(needle, '.method public e(Landroid/graphics/Canvas;Landroid/graphics/RectF;)V', before,
+          before + f'''
+    invoke-static {{}}, {ANIM}->isOfflineUploadAnimating()Z
+    move-result v1
+    if-eqz v1, :sp_native_needle_alpha
+    const/16 v0, 0xff
+    :sp_native_needle_alpha
+''')
     source = files[animator]
     if '.method public static bootstrapOffline(' not in source:
         start = source.index('.method public static declared-synchronized startOffline(')

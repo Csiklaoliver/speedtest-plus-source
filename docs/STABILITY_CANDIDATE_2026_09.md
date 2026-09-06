@@ -41,6 +41,10 @@ hook sites before writing. Keep a backup of the input decoded tree.
   allow the animation driver even when simulated speeds use blank/default inputs.
 - Test Again (`L`) uses GO's offline start (`M`) when offline is selected;
   otherwise it retains the normal restart. Close (`K`) cancels queued local frames.
+- The needle's draw alpha is restored only during an active offline upload;
+  the native reset otherwise hides it while waiting for a real-engine callback
+  that offline mode intentionally never receives. Native online alpha and the
+  first download opening animation are unchanged.
 
 Vendor guidance is local, once per process after a test error, and applies to
 Xiaomi/Redmi/POCO, Oppo/Realme, Vivo/iQOO, Huawei/Honor and OnePlus. This is not a
