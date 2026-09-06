@@ -58,6 +58,10 @@ and can change measured speeds. It is not a guaranteed fix. Sources:
 
 ## iOS changes
 
+This injected universal build requires iOS 14 or later. Its IPA minimum is raised
+from the original application's iOS 10 metadata to match arm64e toolchain support.
+Android retains the base application's Android 7.0 / API 24 minimum.
+
 - All runtime hooks use class-local overrides instead of mutating inherited
   UIViewController methods globally.
 - Setup repair avoids duplicate touch/primary-action wiring. OS permissions and

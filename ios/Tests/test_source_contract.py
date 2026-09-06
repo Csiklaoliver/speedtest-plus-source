@@ -134,6 +134,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertNotIn("method_setImplementation(method, replacement)", hook)
 
     def test_update_version_matches_current_ipa(self):
+        self.assertIn('plist["MinimumOSVersion"] = "14.0"', BUILDER)
         self.assertIn('SPCurrentVersion = @"0.1.26"', UPDATER)
         self.assertIn('parser.add_argument("--speedtest-plus-version", required=True)', BUILDER)
         self.assertIn('plist["SpeedtestPlusVersion"] = args.speedtest_plus_version', BUILDER)

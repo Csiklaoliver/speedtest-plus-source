@@ -107,6 +107,11 @@ def main() -> int:
         plist["CFBundleDisplayName"] = "Speedtest+"
         plist["CFBundleName"] = "Speedtest+"
         plist["SpeedtestPlusVersion"] = args.speedtest_plus_version
+        # The injected universal library's arm64e ABI requires iOS 14 or later.
+        # Do not inherit the original app's misleading iOS 10 minimum.
+        minimum = tuple(int(part) for part in plist.get("MinimumOSVersion", "0").split("."))
+        if minimum < (14, 0):
+            plist["MinimumOSVersion"] = "14.0"
         plist_data = plistlib.dumps(plist, fmt=plistlib.FMT_BINARY, sort_keys=False)
 
         with zipfile.ZipFile(args.output, "w", allowZip64=True) as target:
