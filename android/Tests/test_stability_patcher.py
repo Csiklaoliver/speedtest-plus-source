@@ -15,6 +15,10 @@ class PatcherTests(unittest.TestCase):
             base.mkdir(parents=True)
             animator = base / 'SpeedPlusLiveAnimator.smali'
             runner = base / 'SpeedPlusLiveAnimator$OfflineStart.smali'
+            controller = tree / 'smali_classes4/com/ookla/mobile4/app/ic.smali'
+            controller.parent.mkdir(parents=True)
+            controller.write_text('.method public L()V\n'
+                '    invoke-virtual {p0}, Lcom/ookla/mobile4/app/ic;->M()V\n.end method\n')
             animator.write_text('.method public static declared-synchronized startOffline(X)V\n'
                 f'    sget-object v1, {patcher.ANIM}->coordinatorRef:X\n'
                 'old scheduling\n    :cond_2\n    return-void\n.end method\n')
@@ -28,6 +32,8 @@ class PatcherTests(unittest.TestCase):
             self.assertLess(body.index('->speedPlusOfflineReading'), body.index('->offlineCoordinator'))
             self.assertLess(body.index('->x()V'), body.index('$OfflineUpload;'))
             self.assertNotIn('$OfflineUpload;', changed[animator])
+            self.assertIn('->i()V', changed[controller])
+            self.assertNotIn('->M()V', changed[controller])
             for path, text in changed.items():
                 path.write_text(text)
             self.assertEqual(changed, patcher.deferred_patches(tree))

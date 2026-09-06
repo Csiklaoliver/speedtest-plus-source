@@ -123,6 +123,17 @@ def deferred_patches(tree, files=None):
     files = {} if files is None else files
     base = 'smali_classes6/tech/oliverprojects/speedtestplus/telemetry/'
     animator = tree / (base + 'SpeedPlusLiveAnimator.smali')
+    controller = tree / 'smali_classes4/com/ookla/mobile4/app/ic.smali'
+    if controller.exists():
+        source = files.get(controller, controller.read_text(encoding='utf-8'))
+        source = replace_in_method(source, '.method public L()V',
+            '    invoke-virtual {p0}, Lcom/ookla/mobile4/app/ic;->M()V', f'''    # Keep native RESTARTING_SUITE; GO's connecting transition is different.
+    const/16 v0, 0x60
+    invoke-virtual {{p0, v0}}, Lcom/ookla/mobile4/app/ic;->G(I)V
+    iget-object v0, p0, Lcom/ookla/mobile4/app/ic;->d:Lcom/ookla/mobile4/app/ic$b;
+    invoke-virtual {{v0}}, Lcom/ookla/mobile4/app/ic$b;->i()V
+    invoke-static {{p0}}, {ANIM}->startOffline(Lcom/ookla/mobile4/app/ic;)V''')
+        files[controller] = source
     # Resolve the current gauge only after the first reading creates its view.
     # Upload is scheduled by OfflineStart, never against a stale pre-GO view.
     source = files.get(animator, animator.read_text(encoding='utf-8'))

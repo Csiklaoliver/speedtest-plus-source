@@ -76,7 +76,8 @@ Android retains the base application's Android 7.0 / API 24 minimum.
 
 An experimental second bootstrap was removed after emulator repeat-test coverage
 exposed overlapping native opening animations. The final candidate uses the
-existing single start sequence; Test Again is routed into that same sequence.
+single offline runner. Test Again preserves the native RESTARTING_SUITE transition
+before starting that runner, rather than reusing GO's connecting transition.
 
 Further cold-start coverage found that the original runner silently abandoned
 startup when its pre-GO weak gauge reference was absent. The next candidate
@@ -90,15 +91,19 @@ do not assume differently commented hand-edited hooks match the full patcher.
 ### Current verification snapshot
 
 - Source regression suite: 11 Android tests and 4 public-package tests pass.
-- Deferred-view APK: built, zip alignment verified, signature verified against
+- Restart-transition APK: built, zip alignment verified, signature verified against
   the existing release certificate. SHA-256:
-  `32f6cfbf727febc4b7402336012e06f84ba795d928a0e2ddc4f1237b0e16198f`.
+  `e5ad3403da990a7beb98bd1271f0ce20af864d9da44d00ce318faa1151d8e395`.
 - Earlier minimal candidate reproduced a blank test area after GO. Earlier
   bootstrap candidate reproduced an overlapping-animation exception on repeat.
   Neither is approved for release.
-- Deferred-view candidate: emulator installation encountered overlapping pending
-  package installs; emulator restarted without wiping application data. Runtime
-  acceptance remains pending. Do not promote stable OTA based on build checks.
+- Android API 36.1 emulator, airplane mode: cold offline start and Test Again both
+  completed at 274.0 / 50.0 Mbps. Upload gauge, needle and changing reading are
+  visible with the retained 1k scale. Earlier deferred-only candidate still failed
+  repeat tests; only the restart-transition APK above has passed these checks.
+- Installation recovered after restarting the emulator without wiping app data.
+- Cancelling a third run returned to GO and remained there after the scheduled
+  completion window. No fatal exception was recorded for that candidate process.
 - iOS 0.1.26 compiled successfully; physical-device acceptance remains pending.
 
 Static contracts and syntax checks do not prove UIKit or Dalvik runtime behavior.
