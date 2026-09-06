@@ -64,6 +64,36 @@ def patches(tree):
 
 '''
         files[path] += '\n' + helper
+    runtime = Path(__file__).resolve().parent / 'runtime'
+    animator = tree / (base + 'SpeedPlusLiveAnimator.smali')
+    source = files[animator]
+    if '.method public static bootstrapOffline(' not in source:
+        start = source.index('.method public static declared-synchronized startOffline(')
+        end = source.index('.end method', start) + len('.end method')
+        files[animator] = source[:start] + (runtime / 'offline-bootstrap-methods.txt').read_text() + source[end:]
+    bootstrap = 'SpeedPlusLiveAnimator$Bootstrap.smali'
+    files[tree / (base + bootstrap)] = (runtime / bootstrap).read_text()
+    coordinator = tree / 'smali_classes5/com/ookla/mobile4/views/coordinators/a.smali'
+    source = coordinator.read_text()
+    start = source.index('.method public x()V')
+    end = source.index('.end method', start)
+    body = source[start:end]
+    marker = '    if-eqz v2, :offline_normal'
+    if marker in body:
+        first = body.index(marker)
+        last = body.index('    :offline_normal', first)
+        body = body[:first] + body[last:]
+    before = '    if-eqz v2, :speedplus_custom_animator_done'
+    after = f'''    if-nez v2, :speedplus_start_animator
+    invoke-static {{}}, {STATE}->isOffline()Z
+    move-result v2
+    if-eqz v2, :speedplus_custom_animator_done
+    :speedplus_start_animator'''
+    if ':speedplus_start_animator' not in body:
+        if body.count(before) != 1:
+            raise ValueError('Unrecognized coordinator animator hook')
+        body = body.replace(before, after, 1)
+    files[coordinator] = source[:start] + body + source[end:]
     return files
 
 if __name__ == '__main__':

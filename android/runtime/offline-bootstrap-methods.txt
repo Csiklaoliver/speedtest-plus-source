@@ -1,0 +1,61 @@
+.method public static declared-synchronized startOffline(Lcom/ookla/mobile4/app/ic;)V
+    .locals 5
+    if-eqz p0, :done
+    invoke-static {}, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator;->cancelOffline()V
+    sget v0, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator;->offlineGeneration:I
+    add-int/lit8 v0, v0, 0x1
+    sput v0, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator;->offlineGeneration:I
+    const/4 v1, 0x1
+    sput-boolean v1, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator;->offlineActive:Z
+    const/4 v1, 0x0
+    new-instance v2, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator$Bootstrap;
+    invoke-direct {v2, p0, v0, v1}, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator$Bootstrap;-><init>(Lcom/ookla/mobile4/app/ic;II)V
+    sget-object v1, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator;->MAIN:Landroid/os/Handler;
+    const-wide/16 v3, 0x384
+    invoke-virtual {v1, v2, v3, v4}, Landroid/os/Handler;->postDelayed(Ljava/lang/Runnable;J)Z
+    :done
+    return-void
+.end method
+
+.method public static bootstrapOffline(Lcom/ookla/mobile4/app/ic;II)V
+    .locals 6
+    invoke-static {p1}, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator;->isOfflineCurrent(I)Z
+    move-result v0
+    if-eqz v0, :done
+    if-eqz p0, :cancel
+    if-nez p2, :lookup
+    # Attach the native gauge before resolving its lazily-created coordinator.
+    invoke-virtual {p0}, Lcom/ookla/mobile4/app/ic;->speedPlusPrepareOffline()V
+    :lookup
+    sget-object v0, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator;->coordinatorRef:Ljava/lang/ref/WeakReference;
+    if-eqz v0, :retry
+    invoke-virtual {v0}, Ljava/lang/ref/WeakReference;->get()Ljava/lang/Object;
+    move-result-object v0
+    if-eqz v0, :retry
+    new-instance v1, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator$OfflineStart;
+    invoke-direct {v1, p0, v0, p1}, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator$OfflineStart;-><init>(Lcom/ookla/mobile4/app/ic;Ljava/lang/Object;I)V
+    invoke-virtual {v1}, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator$OfflineStart;->run()V
+    new-instance v1, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator$OfflineUpload;
+    invoke-direct {v1, p0, v0, p1}, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator$OfflineUpload;-><init>(Lcom/ookla/mobile4/app/ic;Ljava/lang/Object;I)V
+    sget-object v2, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator;->MAIN:Landroid/os/Handler;
+    const-wide/16 v3, 0x1388
+    invoke-virtual {v2, v1, v3, v4}, Landroid/os/Handler;->postDelayed(Ljava/lang/Runnable;J)Z
+    return-void
+    :retry
+    const/16 v0, 0x14
+    if-ge p2, v0, :cancel
+    add-int/lit8 p2, p2, 0x1
+    new-instance v1, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator$Bootstrap;
+    invoke-direct {v1, p0, p1, p2}, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator$Bootstrap;-><init>(Lcom/ookla/mobile4/app/ic;II)V
+    sget-object v2, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator;->MAIN:Landroid/os/Handler;
+    const-wide/16 v3, 0x64
+    invoke-virtual {v2, v1, v3, v4}, Landroid/os/Handler;->postDelayed(Ljava/lang/Runnable;J)Z
+    return-void
+    :cancel
+    invoke-static {}, Ltech/oliverprojects/speedtestplus/telemetry/SpeedPlusLiveAnimator;->cancelOffline()V
+    if-eqz p0, :done
+    const/16 v0, 0x80
+    invoke-virtual {p0, v0}, Lcom/ookla/mobile4/app/ic;->G(I)V
+    :done
+    return-void
+.end method
