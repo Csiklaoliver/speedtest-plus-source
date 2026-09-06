@@ -12,6 +12,10 @@ after repacking, never before. Keep private signing material outside this repo.
 
 Decoded runtime changes required in addition to the helper:
 
+`android/patch_stability.py` applies the new hooks to an unmodified 1.8.13
+decoded tree with the offline-cache correction already installed. It validates
+hook sites before writing. Keep a backup of the input decoded tree.
+
 - `SpeedPlusLiveAnimator$Pulse.run`: the initial failed generation check returns
   immediately. It must NOT call `stop(direction)`, which would stop a newer run.
 - `SpeedPlusLiveAnimator.begin`: after accepting a new direction and before
@@ -27,6 +31,9 @@ Decoded runtime changes required in addition to the helper:
   reference and call `SpeedPlusConnectionHelp.show(Activity)`.
 - Native test-controller error callback: after excluding TEST_CANCELLED,
   request connection help. Do not change normal server selection or reports.
+- Native connecting-animation completion (`q`): return in offline mode instead
+  of cancelling the active local generation and entering the real engine.
+  This was observed as a repeat-test stall on the airplane-mode emulator.
 
 Vendor guidance is local, once per process after a test error, and applies to
 Xiaomi/Redmi/POCO, Oppo/Realme, Vivo/iQOO, Huawei/Honor and OnePlus. This is not a
