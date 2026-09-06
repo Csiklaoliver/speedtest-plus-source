@@ -23,6 +23,15 @@ cd ios-speedtestplus
 make clean package FINALPACKAGE=1
 ```
 
+For release compatibility with the archived working builds, install the
+official Theos iPhoneOS 16.5 SDK under `$THEOS/sdks` and compile with:
+
+```sh
+make clean package FINALPACKAGE=1 TARGET=iphone:clang:16.5:12.0
+```
+
+The GitHub artifact workflow performs this compatibility build automatically.
+
 The package is created under `packages/`. The compiled dynamic library is built
 for arm64 and arm64e with an iOS 12 deployment target.
 

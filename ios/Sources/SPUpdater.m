@@ -6,7 +6,7 @@
 static NSString * const SPManifestURL = @"https://raw.githubusercontent.com/Csiklaoliver/speedtest-plus-docs/main/ota/manifest.json";
 // Keep this in sync with the IPA's SpeedtestPlusVersion metadata. A stale
 // value here makes every current install report its own release as an update.
-static NSString * const SPCurrentVersion = @"0.1.22";
+static NSString * const SPCurrentVersion = @"0.1.26";
 
 static BOOL SPIsNativeSetupController(UIViewController *controller) {
     if (!controller) return NO;
@@ -98,7 +98,7 @@ static void SPShowUpdateWhenReady(NSString *version, NSURL *downloadURL, UIViewC
         if ([SPState.shared.lastPromptedUpdateVersion isEqualToString:version]) return;
         [SPState.shared setLastPromptedUpdateVersion:version];
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Speedtest+ update available"
-            message:[NSString stringWithFormat:@"Version %@ is ready. iOS updates open the signed download page.", version]
+            message:[NSString stringWithFormat:@"Version %@ is ready. Download the unsigned IPA, then use your normal signing and sideloading method.", version]
             preferredStyle:UIAlertControllerStyleAlert];
         [alert addAction:[UIAlertAction actionWithTitle:@"Later" style:UIAlertActionStyleCancel handler:nil]];
         [alert addAction:[UIAlertAction actionWithTitle:@"Open download" style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {

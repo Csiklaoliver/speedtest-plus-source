@@ -22,7 +22,6 @@ static const NSInteger SPBadgeTag = 0x53505032;
 static const NSInteger SPProviderHotspotTag = 0x53505033;
 static const void *SPObserverTokenKey = &SPObserverTokenKey;
 static const void *SPProviderLayoutRetryKey = &SPProviderLayoutRetryKey;
-static const void *SPProviderFallbackTargetKey = &SPProviderFallbackTargetKey;
 
 static id SPObject(id object, SEL selector);
 
@@ -263,11 +262,13 @@ static void SPScheduleFinalResultLabelRepair(id controller, NSDictionary *result
     if (!controller || !result.count) return;
     __weak id weakController = controller;
     NSNumber *completion = result[@"completed_at"];
+    const NSUInteger generation = SPState.shared.runGeneration;
     for (NSNumber *delay in @[@0.0, @0.08, @0.25, @0.60, @1.20]) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             id strongController = weakController;
             NSDictionary *current = SPState.shared.lastResult;
-            if (!strongController || !current.count ||
+            if (!strongController || !current.count || SPState.shared.testActive ||
+                SPState.shared.runGeneration != generation ||
                 (completion && ![completion isEqual:current[@"completed_at"]])) return;
             SPApplyResultOverrideLabels(strongController, current);
         });
@@ -301,19 +302,137 @@ static void SPApplyDataSaverToObject(id owner) {
     }
 }
 
+// Offline mode must not depend on private Swift gauge methods or server discovery.
+// This controller is presented only for an explicitly selected local simulation.
+@interface SPOfflineViewController : UIViewController
+@property(nonatomic, strong) UILabel *downloadResult;
+@property(nonatomic, strong) UILabel *uploadResult;
+@property(nonatomic, strong) UILabel *pingResult;
+@property(nonatomic, strong) UILabel *jitterResult;
+@property(nonatomic, strong) UILabel *userMessageLabel;
+@property(nonatomic, strong) UILabel *reading;
+@property(nonatomic, strong) UIView *dial;
+@property(nonatomic, strong) CAShapeLayer *track;
+@property(nonatomic, strong) CAShapeLayer *fill;
+@property(nonatomic, strong) CAShapeLayer *needle;
+@property(nonatomic) NSUInteger generation;
+- (void)renderSpeed:(double)value direction:(SPDirection)direction;
+@end
+
+@implementation SPOfflineViewController
+- (UILabel *)label:(NSString *)text size:(CGFloat)size {
+    UILabel *label = [UILabel new];
+    label.text = text;
+    label.textColor = UIColor.whiteColor;
+    label.font = [UIFont monospacedDigitSystemFontOfSize:size weight:UIFontWeightRegular];
+    label.textAlignment = NSTextAlignmentCenter;
+    label.numberOfLines = 0;
+    return label;
+}
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.view.backgroundColor = [UIColor colorWithRed:0.043 green:0.047 blue:0.106 alpha:1];
+    self.generation = SPState.shared.runGeneration;
+    self.downloadResult = [self label:@"0.0" size:26];
+    self.uploadResult = [self label:@"0.0" size:26];
+    self.pingResult = [self label:@"-" size:18];
+    self.jitterResult = [self label:@"-" size:18];
+    self.reading = [self label:@"Preparing…" size:34];
+    self.reading.adjustsFontSizeToFitWidth = YES;
+    self.reading.minimumScaleFactor = 0.25;
+    self.userMessageLabel = [self label:@"Offline simulation • No test traffic\nScale: 0–1,000 Mbps" size:14];
+    UIButton *close = [UIButton buttonWithType:UIButtonTypeSystem];
+    [close setTitle:@"Close" forState:UIControlStateNormal];
+    [close addTarget:self action:@selector(close) forControlEvents:UIControlEventTouchUpInside];
+    UIStackView *down = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:@"Download Mbps" size:16], self.downloadResult]];
+    UIStackView *up = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:@"Upload Mbps" size:16], self.uploadResult]];
+    down.axis = up.axis = UILayoutConstraintAxisVertical;
+    UIStackView *metrics = [[UIStackView alloc] initWithArrangedSubviews:@[down, up]];
+    metrics.distribution = UIStackViewDistributionFillEqually;
+    UIStackView *latency = [[UIStackView alloc] initWithArrangedSubviews:@[[self label:@"Ping ms" size:14], self.pingResult, [self label:@"Jitter ms" size:14], self.jitterResult]];
+    latency.distribution = UIStackViewDistributionFillEqually;
+    self.dial = [UIView new];
+    self.track = [CAShapeLayer layer]; self.fill = [CAShapeLayer layer]; self.needle = [CAShapeLayer layer];
+    for (CAShapeLayer *layer in @[self.track, self.fill]) {
+        layer.fillColor = UIColor.clearColor.CGColor;
+        layer.lineWidth = 18;
+        layer.lineCap = kCALineCapRound;
+        [self.dial.layer addSublayer:layer];
+    }
+    self.track.strokeColor = [UIColor colorWithWhite:0.22 alpha:1].CGColor;
+    self.fill.strokeEnd = 0;
+    self.needle.strokeColor = UIColor.whiteColor.CGColor;
+    self.needle.lineWidth = 5;
+    [self.dial.layer addSublayer:self.needle];
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[close, metrics, latency, self.dial, self.reading, self.userMessageLabel]];
+    stack.axis = UILayoutConstraintAxisVertical; stack.spacing = 16;
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:stack];
+    UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
+    [NSLayoutConstraint activateConstraints:@[
+        [stack.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:20],
+        [stack.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-20],
+        [stack.topAnchor constraintEqualToAnchor:safe.topAnchor constant:8],
+        [stack.bottomAnchor constraintLessThanOrEqualToAnchor:safe.bottomAnchor constant:-8],
+        [close.heightAnchor constraintEqualToConstant:44],
+        [self.dial.heightAnchor constraintEqualToAnchor:safe.heightAnchor multiplier:0.40]
+    ]];
+}
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    CGRect bounds = self.dial.bounds;
+    CGFloat radius = MAX(0, MIN(bounds.size.width, bounds.size.height) / 2 - 18);
+    CGPoint center = CGPointMake(CGRectGetMidX(bounds), CGRectGetMidY(bounds));
+    UIBezierPath *arc = [UIBezierPath bezierPathWithArcCenter:center radius:radius startAngle:M_PI * 0.75 endAngle:M_PI * 2.25 clockwise:YES];
+    self.track.path = self.fill.path = arc.CGPath;
+}
+- (void)renderSpeed:(double)value direction:(SPDirection)direction {
+    if (!isfinite(value)) return;
+    CGFloat fraction = MIN(1, MAX(0, log10(1 + MAX(0, value)) / log10(1001)));
+    [CATransaction begin]; [CATransaction setDisableActions:SPState.shared.reduceMotionEnabled];
+    [CATransaction setAnimationDuration:0.1];
+    self.fill.strokeColor = (direction == SPDirectionDownload ? UIColor.cyanColor : UIColor.magentaColor).CGColor;
+    self.fill.strokeEnd = fraction;
+    CGFloat angle = M_PI * (0.75 + 1.5 * fraction);
+    CGRect bounds = self.dial.bounds;
+    CGPoint center = CGPointMake(CGRectGetMidX(bounds), CGRectGetMidY(bounds));
+    CGFloat radius = MAX(0, MIN(bounds.size.width, bounds.size.height) / 2 - 35);
+    UIBezierPath *line = [UIBezierPath bezierPath]; [line moveToPoint:center];
+    [line addLineToPoint:CGPointMake(center.x + cos(angle) * radius, center.y + sin(angle) * radius)];
+    self.needle.path = line.CGPath;
+    [CATransaction commit];
+    self.reading.text = [NSString stringWithFormat:@"%@\n%.1f Mbps", direction == SPDirectionDownload ? @"Download" : @"Upload", value];
+}
+- (void)close {
+    if (SPState.shared.runGeneration == self.generation && SPState.shared.testActive) [SPState.shared cancelTest];
+    [self dismissViewControllerAnimated:YES completion:nil];
+}
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    if (!SPState.shared.testActive && !SPState.shared.lastResult.count) self.userMessageLabel.text = @"Simulation stopped. Close to return to GO.";
+}
+@end
+
 static void SPSetOfflineFrame(id controller, SPDirection direction, double value) {
     NSString *text = SPFormatMbps(value);
     UILabel *label = SPDisplayLabel(controller, direction == SPDirectionDownload ? @"downloadResult" : @"uploadResult");
     if (label) label.text = text;
-    // Some builds expose the gauge display directly, while others keep it in
-    // a child object.  Both calls are optional and therefore safe on either.
-    id display = SPObject(controller, NSSelectorFromString(@"speedDisplay"));
-    if (!display) display = SPObject(controller, NSSelectorFromString(@"display"));
-    if (display) SPSetDouble(display, NSSelectorFromString(@"t0:"), value);
+    if ([controller isKindOfClass:SPOfflineViewController.class])
+        [(SPOfflineViewController *)controller renderSpeed:value direction:direction];
 }
 
 static void SPStartOfflineDemo(id controller) {
     SPState *state = SPState.shared;
+    if (![controller isKindOfClass:UIViewController.class] || [(UIViewController *)controller presentedViewController]) {
+        [state cancelTest];
+        return;
+    }
+    SPOfflineViewController *offline = [SPOfflineViewController new];
+    offline.modalPresentationStyle = UIModalPresentationFullScreen;
+    [(UIViewController *)controller presentViewController:offline animated:YES completion:nil];
+    [offline loadViewIfNeeded];
+    controller = offline;
+    const NSUInteger generation = state.runGeneration;
     [state setStage:SPStageDownload];
     UILabel *download = SPDisplayLabel(controller, @"downloadResult");
     UILabel *upload = SPDisplayLabel(controller, @"uploadResult");
@@ -324,23 +443,23 @@ static void SPStartOfflineDemo(id controller) {
     if (ping) ping.text = @"-";
     if (jitter) jitter.text = @"-";
     __weak id weakController = controller;
-    const NSInteger frames = 24;
+    const NSInteger frames = 120;
     for (NSInteger frame = 0; frame <= frames; frame++) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(frame * 100 * NSEC_PER_MSEC)), dispatch_get_main_queue(), ^{
             id strongController = weakController;
-            if (!strongController || !state.testActive) return;
+            if (!strongController || !state.testActive || state.runGeneration != generation) return;
             double progress = (double)frame / (double)frames;
-            if (frame <= 12) {
+            if (frame <= frames / 2) {
                 [state setStage:SPStageDownload];
-                double shown = [state displayMbpsForDirection:SPDirectionDownload measuredMbps:100.0 progress:progress];
+                double shown = [state displayMbpsForDirection:SPDirectionDownload measuredMbps:100.0 progress:progress * 2.0];
                 SPSetOfflineFrame(strongController, SPDirectionDownload, shown);
             } else {
                 [state setStage:SPStageUpload];
-                double uploadProgress = (double)(frame - 12) / (double)(frames - 12);
+                double uploadProgress = (double)(frame - frames / 2) / (double)(frames / 2);
                 double shown = [state displayMbpsForDirection:SPDirectionUpload measuredMbps:20.0 progress:uploadProgress];
                 SPSetOfflineFrame(strongController, SPDirectionUpload, shown);
             }
-            if (frame == 12) {
+            if (frame == frames / 2) {
                 NSNumber *demoPing = [state runNumberForKey:@"ping"] ?: @20;
                 NSNumber *demoJitter = [state runNumberForKey:@"jitter"] ?: @3;
                 if (ping) ping.text = demoPing.stringValue;
@@ -371,13 +490,14 @@ static void SPStartOfflineDemo(id controller) {
 // completes.
 static void SPScheduleLiveLabelFallback(id controller, SPDirection direction) {
     SPState *state = SPState.shared;
+    const NSUInteger generation = state.runGeneration;
     if (!controller || !state.testActive || ![state runHasSpeedOverrideForDirection:direction]) return;
     NSInteger expectedStage = direction == SPDirectionDownload ? SPStageDownload : SPStageUpload;
     __weak id weakController = controller;
     for (NSInteger frame = 0; frame < 160; frame++) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(frame * 100 * NSEC_PER_MSEC)), dispatch_get_main_queue(), ^{
             id strongController = weakController;
-            if (!strongController || !state.testActive || state.stage != expectedStage ||
+            if (!strongController || !state.testActive || state.runGeneration != generation || state.stage != expectedStage ||
                 ![state runHasSpeedOverrideForDirection:direction]) return;
             NSString *getter = direction == SPDirectionDownload ? @"downloadResult" : @"uploadResult";
             UILabel *label = SPDisplayLabel(strongController, getter);
@@ -629,7 +749,6 @@ static void SPRemoveCustomSurfacesForNativeSetup(UIViewController *controller) {
     SPRemoveCustomViewsWithTag(controller.view, SPProviderHotspotTag);
     SPRemoveCustomGestures(controller.view);
     objc_setAssociatedObject(controller, SPActionTargetKey, nil, OBJC_ASSOCIATION_ASSIGN);
-    objc_setAssociatedObject(controller, SPProviderFallbackTargetKey, nil, OBJC_ASSOCIATION_ASSIGN);
     SPRepairNativeSetupControls(SPTopController(controller) ?: controller);
     [controller.view setNeedsLayout];
 }
@@ -669,140 +788,6 @@ static UIButton *SPInstallProviderHotspot(UIViewController *presenter, UIView *p
     return hotspot;
 }
 
-// The provider host is private UIKit/Swift code and has changed shape across
-// minor Speedtest releases.  When its class or accessors are renamed, the
-// selector hooks above cannot find an anchor even though the native provider
-// row is already on screen.  Pick a conservative, bottom-row text label as a
-// last-resort anchor.  This never replaces the native provider/server
-// controls: the custom button is a small sibling of the label and its gesture
-// recognizer does not cancel touches in the row.
-static BOOL SPFallbackLabelIsUsable(UILabel *label) {
-    if (![label isKindOfClass:UILabel.class] || label.hidden || label.alpha < 0.05) return NO;
-    NSString *text = [label.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
-    if (!text.length || text.length > 64) return NO;
-    NSString *lower = text.lowercaseString;
-    // Survey/question labels can sit below the provider row and are often
-    // hosted by generic UIView subclasses.  Exclude their actual text too,
-    // otherwise the hierarchy fallback can attach the controls affordance to
-    // the feedback card instead of the ISP row on a rebuilt UI.
-    for (NSString *excluded in @[@"download", @"upload", @"ping", @"jitter", @"mbps", @"feedback", @"speedtest", @"video", @"map", @"downdetector", @"how would", @"how does", @"expectation", @"compare your", @"rate "]) {
-        if ([lower containsString:excluded]) return NO;
-    }
-    // Device model labels commonly look like SM-S928B or contain only
-    // digits/punctuation.  Prefer the ISP text rather than that second line.
-    if ([text rangeOfCharacterFromSet:NSCharacterSet.letterCharacterSet].location == NSNotFound) return NO;
-    if ([text containsString:@"-"] && [text rangeOfCharacterFromSet:NSCharacterSet.decimalDigitCharacterSet].location != NSNotFound) return NO;
-    return YES;
-}
-
-static BOOL SPFallbackLabelIsInNonProviderSurface(UILabel *label, UIViewController *controller) {
-    UIView *cursor = label.superview;
-    while (cursor && cursor != controller.view) {
-        NSString *name = NSStringFromClass(cursor.class).lowercaseString;
-        // Never put the entry point in the feedback survey, tab bar, or a
-        // navigation/guide surface merely because it happens to be lower on
-        // screen than the provider row.
-        for (NSString *excluded in @[@"feedback", @"survey", @"question", @"tabbar", @"navigation", @"guide"]) {
-            if ([name containsString:excluded]) return YES;
-        }
-        cursor = cursor.superview;
-    }
-    return NO;
-}
-
-static UILabel *SPFallbackProviderLabel(UIViewController *controller) {
-    if (![controller isKindOfClass:UIViewController.class] || !controller.view) return nil;
-    NSMutableArray<UILabel *> *labels = [NSMutableArray array];
-    SPCollectLabels(controller.view, labels);
-    CGRect bounds = controller.view.bounds;
-    UILabel *best = nil;
-    CGRect bestRect = CGRectZero;
-    for (UILabel *label in labels) {
-        if (!SPFallbackLabelIsUsable(label) || !label.superview) continue;
-        if (SPFallbackLabelIsInNonProviderSurface(label, controller)) continue;
-        CGRect rect = [label.superview convertRect:label.frame toView:controller.view];
-        if (CGRectIsNull(rect) || CGRectIsInfinite(rect) || rect.size.width < 24.0 || CGRectGetMidY(rect) < bounds.size.height * 0.55) continue;
-        // The ISP row is the lowest text cluster in the speed card.  Prefer
-        // the leftmost label when ISP and server labels share a baseline.
-        if (!best || rect.origin.y > bestRect.origin.y + 16.0 ||
-            (fabs(rect.origin.y - bestRect.origin.y) <= 16.0 && rect.origin.x < bestRect.origin.x)) {
-            best = label;
-            bestRect = rect;
-        }
-    }
-    return best;
-}
-
-static UIButton *SPInstallFallbackProviderButton(UIViewController *controller, UILabel *ispLabel) {
-    if (![controller isKindOfClass:UIViewController.class] || ![ispLabel isKindOfClass:UILabel.class]) return nil;
-    UIView *row = ispLabel.superview;
-    if (![row isKindOfClass:UIView.class]) return nil;
-    // Keep the stable speed controller as the weak target owner.  Resolving
-    // SPPresenter here could capture a transient native setup sheet; after it
-    // is dismissed that sheet is gone and the button would lose its action.
-    UIViewController *presenter = controller;
-    if (!presenter) return nil;
-    [SPConnectionHealth noteNativeServerListReady:YES];
-
-    UIButton *existing = [controller.view viewWithTag:SPButtonTag];
-    if (existing) return existing;
-    SPActionTarget *target = [SPActionTarget new];
-    target.presenter = presenter;
-    objc_setAssociatedObject(controller, SPProviderFallbackTargetKey, target, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-
-    UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
-    button.tag = SPButtonTag;
-    button.translatesAutoresizingMaskIntoConstraints = NO;
-    button.tintColor = ispLabel.textColor ?: UIColor.whiteColor;
-    button.titleLabel.font = [UIFont systemFontOfSize:22 weight:UIFontWeightSemibold];
-    if (@available(iOS 13.0, *)) {
-        UIImage *image = [UIImage systemImageNamed:@"info.circle"];
-        if (image) [button setImage:image forState:UIControlStateNormal];
-        else [button setTitle:@"\u24d8" forState:UIControlStateNormal];
-    } else {
-        [button setTitle:@"\u24d8" forState:UIControlStateNormal];
-    }
-    button.accessibilityLabel = @"Open Speedtest+ information and controls";
-    button.accessibilityHint = SPState.shared.panelHidden
-        ? @"Unlocks the password-protected Speedtest+ controls"
-        : @"Opens the Speedtest+ guide and controls";
-    button.accessibilityIdentifier = @"speedtest_plus_provider_info_fallback";
-    button.backgroundColor = UIColor.clearColor;
-    button.alpha = 1.0;
-    button.userInteractionEnabled = YES;
-    [SPTheme applyFunctionalMaterialToView:button theme:[SPTheme themeAtIndex:SPState.shared.themeIndex]];
-    [button.widthAnchor constraintEqualToConstant:48].active = YES;
-    [button.heightAnchor constraintEqualToConstant:48].active = YES;
-    [button addTarget:target action:@selector(openGuide) forControlEvents:UIControlEventTouchUpInside];
-
-    if ([row isKindOfClass:UIStackView.class] && [((UIStackView *)row).arrangedSubviews containsObject:ispLabel]) {
-        UIStackView *stack = (UIStackView *)row;
-        NSUInteger index = [stack.arrangedSubviews indexOfObject:ispLabel];
-        [stack insertArrangedSubview:button atIndex:MIN(index + 1, stack.arrangedSubviews.count)];
-    } else {
-        [row addSubview:button];
-        [NSLayoutConstraint activateConstraints:@[
-            [button.leadingAnchor constraintEqualToAnchor:ispLabel.trailingAnchor constant:6.0],
-            [button.centerYAnchor constraintEqualToAnchor:ispLabel.centerYAnchor],
-            [button.trailingAnchor constraintLessThanOrEqualToAnchor:row.trailingAnchor constant:-4.0]
-        ]];
-    }
-    SPInstallProviderLongPress(row, target);
-    SPInstallProviderLongPress(ispLabel, target);
-    SPInstallProviderHotspot(presenter, row, ispLabel, target);
-    [row bringSubviewToFront:button];
-    return button;
-}
-
-static void SPAttachFallbackProviderControls(UIViewController *controller) {
-    if (![controller isKindOfClass:UIViewController.class]) return;
-    if (SPHasNativeSetupSurface(controller)) return;
-    UILabel *label = SPFallbackProviderLabel(controller);
-    if (!label) return;
-    if ([controller.view viewWithTag:SPButtonTag]) return;
-    SPInstallFallbackProviderButton(controller, label);
-}
-
 static void SPRemoveLegacyFloatingControls(UIViewController *controller) {
     if (![controller isKindOfClass:UIViewController.class]) return;
     // Builds before 0.1.3 placed the controls in the lower-right corner of
@@ -815,24 +800,20 @@ static void SPRemoveLegacyFloatingControls(UIViewController *controller) {
 }
 
 static void SPAttachControls(UIViewController *controller) {
-    // Keep the main gauge surface entirely native.  Speedtest+ opens from the
-    // provider-row info button, with the provider-row long press as a fallback.
+    // Keep the main gauge surface entirely native. Speedtest+ is inserted only
+    // after the real ISPHostController exposes its ISP label and provider row.
+    // If that private anchor changes, fail closed instead of guessing a label
+    // and creating a floating button on an unrelated host surface.
     SPRemoveLegacyFloatingControls(controller);
-    SPAttachFallbackProviderControls(controller);
 }
 
 static void SPAttachProviderControls(id hostController, UIStackView *stack) {
-    UIView *ispView = SPObject(hostController, NSSelectorFromString(@"ispView"));
     UILabel *ispLabel = SPLabel(hostController, @"ispNameLabel");
-    // A few iOS builds return nil for the private ispView accessor even though
-    // the label is already attached.  Use its row as a safe provider-only
-    // fallback instead of abandoning the controls entry point.  If the label
-    // accessor itself changed, the provider host/stack is still a safe custom
-    // anchor for the Speedtest+ button and gesture.
-    if (![ispView isKindOfClass:UIView.class] && [ispLabel.superview isKindOfClass:UIView.class]) ispView = ispLabel.superview;
-    if (![ispView isKindOfClass:UIView.class] && [stack isKindOfClass:UIView.class]) ispView = stack;
-    if (![ispView isKindOfClass:UIView.class]) return;
-    UIViewController *presenter = SPViewControllerForView(ispView);
+    UIView *providerRow = [ispLabel.superview isKindOfClass:UIView.class] ? ispLabel.superview : nil;
+    // Never add a visible entry point to the host view or an inferred public
+    // label. The confirmed ISP label's own row is the only valid container.
+    if (![ispLabel isKindOfClass:UILabel.class] || !providerRow) return;
+    UIViewController *presenter = SPViewControllerForView(providerRow);
     if (!presenter) return;
     if (SPHasNativeSetupSurface(presenter)) {
         SPRemoveCustomSurfacesForNativeSetup(presenter);
@@ -842,7 +823,7 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
 
     UIButton *existing = [presenter.view viewWithTag:SPButtonTag];
     UILabel *existingBadge = [presenter.view viewWithTag:SPBadgeTag];
-    if (existing && !SPViewIsDescendantOf(existing, ispView) && !SPViewIsDescendantOf(existing, stack)) {
+    if (existing && !SPViewIsDescendantOf(existing, providerRow)) {
         [existing removeFromSuperview];
         [existingBadge removeFromSuperview];
         existing = nil;
@@ -856,10 +837,9 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
         objc_setAssociatedObject(hostController, SPActionTargetKey, target, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         [existing removeTarget:nil action:NULL forControlEvents:UIControlEventTouchUpInside];
         [existing addTarget:target action:@selector(openGuide) forControlEvents:UIControlEventTouchUpInside];
-        SPInstallProviderLongPress(ispView, target);
+        SPInstallProviderLongPress(providerRow, target);
         SPInstallProviderLongPress(ispLabel, target);
-        if (ispLabel.superview != ispView) SPInstallProviderLongPress(ispLabel.superview, target);
-        SPInstallProviderHotspot(presenter, ispView, ispLabel, target);
+        SPInstallProviderHotspot(presenter, providerRow, ispLabel, target);
         SPApplyProviderLabels(hostController);
         SPRefreshBadge(presenter);
         return;
@@ -910,36 +890,22 @@ static void SPAttachProviderControls(id hostController, UIStackView *stack) {
         [badge.bottomAnchor constraintEqualToAnchor:button.topAnchor constant:2]
     ]];
 
-    UIView *ispRow = ispLabel.superview;
-    if ([ispLabel isKindOfClass:UILabel.class] && [ispRow isKindOfClass:UIStackView.class] && [((UIStackView *)ispRow).arrangedSubviews containsObject:ispLabel]) {
-        UIStackView *row = (UIStackView *)ispRow;
+    if ([providerRow isKindOfClass:UIStackView.class] && [((UIStackView *)providerRow).arrangedSubviews containsObject:ispLabel]) {
+        UIStackView *row = (UIStackView *)providerRow;
         NSUInteger labelIndex = [row.arrangedSubviews indexOfObject:ispLabel];
         [row insertArrangedSubview:button atIndex:MIN(labelIndex + 1, row.arrangedSubviews.count)];
-    } else if (![ispLabel isKindOfClass:UILabel.class]) {
-        // The label getter is private and has changed between app builds.  A
-        // trailing button on the provider host keeps the custom entry point
-        // available without changing any stock server controls.
-        [ispView addSubview:button];
-        [NSLayoutConstraint activateConstraints:@[
-            [button.trailingAnchor constraintEqualToAnchor:ispView.trailingAnchor constant:-4],
-            [button.centerYAnchor constraintEqualToAnchor:ispView.centerYAnchor]
-        ]];
     } else {
-        UIView *container = [ispRow isKindOfClass:UIView.class] && SPViewIsDescendantOf(ispLabel, ispRow) ? ispRow : ispView;
-        [container addSubview:button];
+        [providerRow addSubview:button];
         [NSLayoutConstraint activateConstraints:@[
             [button.leadingAnchor constraintEqualToAnchor:ispLabel.trailingAnchor constant:6],
             [button.centerYAnchor constraintEqualToAnchor:ispLabel.centerYAnchor],
-            [button.trailingAnchor constraintLessThanOrEqualToAnchor:container.trailingAnchor constant:-4]
+            [button.trailingAnchor constraintLessThanOrEqualToAnchor:providerRow.trailingAnchor constant:-4]
         ]];
     }
 
-    UIView *providerView = ispView;
+    UIView *providerView = providerRow;
     SPInstallProviderLongPress(providerView, target);
-    if ([ispLabel isKindOfClass:UILabel.class]) {
-        SPInstallProviderLongPress(ispLabel, target);
-        if (ispLabel.superview != providerView) SPInstallProviderLongPress(ispLabel.superview, target);
-    }
+    SPInstallProviderLongPress(ispLabel, target);
     SPInstallProviderHotspot(presenter, providerView, ispLabel, target);
     __weak UIViewController *weakPresenter = presenter;
     __weak id weakHost = hostController;
@@ -982,15 +948,13 @@ static void SPFindProviderControlsInView(UIView *view) {
 static void SPRetryProviderControls(UIViewController *controller) {
     if (![controller isKindOfClass:UIViewController.class]) return;
     __weak UIViewController *weakController = controller;
-    // The provider row is lazy on some iOS 17/18 devices.  Keep the normal
-    // private-host retries, then run the public-view fallback after the row
-    // has had time to finish its first layout pass.
+    // The provider row is lazy on some iOS 17/18 devices. Keep bounded retries
+    // for the confirmed private host, but never fall back to arbitrary labels.
     for (NSNumber *delay in @[@0.0, @0.25, @0.75, @1.5, @2.5]) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             UIViewController *strongController = weakController;
             if (!strongController) return;
             SPFindProviderControlsInView(strongController.view);
-            if (delay.doubleValue >= 2.5) SPAttachFallbackProviderControls(strongController);
         });
     }
 }
@@ -1066,7 +1030,8 @@ static void SPRepairNativeSetupControlsInView(UIView *view, UIViewController *fa
             if ([owner respondsToSelector:action]) {
                 BOOL hasTouchAction = NO;
                 for (id target in button.allTargets) {
-                    if ([button actionsForTarget:target forControlEvent:UIControlEventTouchUpInside].count) {
+                    if ([button actionsForTarget:target forControlEvent:UIControlEventTouchUpInside].count ||
+                        [button actionsForTarget:target forControlEvent:UIControlEventPrimaryActionTriggered].count) {
                         hasTouchAction = YES;
                         break;
                     }
@@ -1074,7 +1039,7 @@ static void SPRepairNativeSetupControlsInView(UIView *view, UIViewController *fa
                 if (!hasTouchAction) {
                     [button addTarget:owner
                                action:action
-                     forControlEvents:(UIControlEventTouchUpInside | UIControlEventPrimaryActionTriggered)];
+                     forControlEvents:UIControlEventTouchUpInside];
                 }
                 // Keep the native page usable if an earlier custom layout
                 // pass accidentally left the stock control disabled.
@@ -1193,10 +1158,8 @@ static void SPAttachProviderControlsAfterLayout(UIViewController *controller) {
     if (last && now - last.doubleValue < 0.25) return;
     objc_setAssociatedObject(controller, SPProviderLayoutRetryKey, @(now), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     SPFindProviderControlsInView(controller.view);
-    // A renamed private host can make every selector hook a no-op.  Once the
-    // visible speed card has laid out, repair the provider-row affordance from
-    // the public UIView/UILabel hierarchy instead of adding a floating button.
-    if (![controller.view viewWithTag:SPButtonTag]) SPAttachFallbackProviderControls(controller);
+    // A renamed private host now fails closed. Never infer a provider row from
+    // arbitrary labels because that can place the button on the gauge/cards.
 }
 
 static BOOL SPIsScopedController(UIViewController *controller) {
@@ -1314,8 +1277,10 @@ static id SPSavedModelForReport(id owner, id report) {
 
 // CoreDataManager can hand the report object to its saver before the result
 // model has been attached. Keep the pending customized result alive across a
-// short, bounded window so a native asynchronous save cannot silently restore
-// the dots/placeholders or the measured value.
+// bounded window so a native asynchronous save cannot silently restore the
+// dots/placeholders or the measured value.  Some devices attach the Core Data
+// model after the result transition finishes, so retain the repair long enough
+// to cover that normal asynchronous path without ever touching an older test.
 static void SPApplyPendingSavedModelEventually(id owner, id report, NSDictionary *pending) {
     if (!owner || !pending.count) return;
     __weak id weakOwner = owner;
@@ -1333,7 +1298,7 @@ static void SPApplyPendingSavedModelEventually(id owner, id report, NSDictionary
         }
     };
     attempt();
-    for (NSNumber *delay in @[@0.10, @0.35, @0.80, @1.50]) {
+    for (NSNumber *delay in @[@0.10, @0.35, @0.80, @1.50, @2.50, @4.00]) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay.doubleValue * NSEC_PER_SEC)), dispatch_get_main_queue(), attempt);
     }
 }
@@ -1501,6 +1466,7 @@ static void HookSetJitterResult(id self, SEL _cmd, id value) {
 
 static void (*OrigGaugeBegin)(id, SEL, id, id);
 static void HookGaugeBegin(id self, SEL _cmd, id sender, id event) {
+    if (SPState.shared.testActive && [SPState.shared runBoolForKey:@"offline_mode"]) return;
     [SPState.shared beginTest];
     if ([SPState.shared runBoolForKey:@"offline_mode"]) {
         SPStartOfflineDemo(self);
@@ -1743,16 +1709,22 @@ static void HookSaveReportAsResult(id self, SEL _cmd, id report) {
 }
 
 static void SPHook(Class cls, NSString *selectorName, IMP replacement, IMP *original) {
-    if (!cls) return;
-    SEL selector = NSSelectorFromString(selectorName);
-    if (!class_getInstanceMethod(cls, selector)) return;
-    Method method = class_getInstanceMethod(cls, selector);
-    if (original) *original = method_getImplementation(method);
-    method_setImplementation(method, replacement);
+    // Never mutate the superclass method returned by class_getInstanceMethod.
+    // Several Speedtest controllers inherit UIKit lifecycle methods instead
+    // of implementing them locally. Calling method_setImplementation on that
+    // inherited Method replaces UIViewController's implementation globally,
+    // causing unrelated launch/onboarding controllers to run Speedtest+ hooks
+    // and potentially preventing the native startup flow from completing.
+    // SPHookLocal adds a class-scoped override when the selector is inherited
+    // and captures the actual superclass implementation for the hook to call.
+    SPHookLocal(cls, selectorName, replacement, original);
 }
 
 __attribute__((constructor)) static void SpeedtestPlusInitialize(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
+        [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidEnterBackgroundNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(__unused NSNotification *notification) {
+            if (SPState.shared.testActive && [SPState.shared runBoolForKey:@"offline_mode"]) [SPState.shared cancelTest];
+        }];
         Class speed = NSClassFromString(@"_TtC9SpeedTest23SpeedTestViewController");
         SPHook(speed, @"viewDidLoad", (IMP)HookSpeedViewDidLoad, (IMP *)&OrigSpeedViewDidLoad);
         SPHook(speed, @"viewWillAppear:", (IMP)HookSpeedViewWillAppear, (IMP *)&OrigSpeedViewWillAppear);

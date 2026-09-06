@@ -10,7 +10,7 @@
 | ISP/provider/location | State, final labels, details, compare, feedback | Needs device review |
 | Three profiles | Persistent NSUserDefaults dictionaries | Static review complete |
 | Ten themes | Scoped recursive UIKit palette application | Needs visual review |
-| Guide and badge | Injected UIKit overlay | Needs layout review |
+| Guide and badge | Inline control inside the confirmed ISP provider row | Needs device review |
 | Hidden/password panel | SHA-256 password hash, long-press unlock | Static review complete |
 | Local text share | Unified finalized result builder | Static review complete |
 | CSV | Four appended columns | Unit/device review needed |
@@ -21,6 +21,11 @@
 The 0.1.11 maintenance build adds a label-only fallback for brief transfer
 callback gaps reported on older iPhones. It does not replace the native
 transfer model or server-selection path.
+
+The 0.1.26 maintenance build removes the public-label heuristic that could
+place the controls icon on an unrelated gauge or survey surface during early
+layout. The visible icon now requires the confirmed `ISPHostController`
+`ispNameLabel` row and otherwise fails closed.
 
 The first review build is intentionally conservative around private Swift model
 internals. Visible parity and the local `CoreDataManager` boundary are implemented;
