@@ -36,6 +36,16 @@ def patches(tree):
     patch(base + 'SpeedPlusLiveAnimator.smali', '.method public static declared-synchronized begin(', begin,
           f'    const/4 v2, 0x3\n    sub-int/2addr v2, p1\n    invoke-static {{v2}}, {ANIM}->stop(I)V\n\n' + begin)
     controller = 'smali_classes4/com/ookla/mobile4/app/ic.smali'
+    patch(controller, '.method public L()V', '    .locals 1\n', f'''    .locals 1
+    invoke-static {{}}, {STATE}->isOffline()Z
+    move-result v0
+    if-eqz v0, :sp_native_restart
+    invoke-virtual {{p0}}, Lcom/ookla/mobile4/app/ic;->M()V
+    return-void
+    :sp_native_restart
+''')
+    patch(controller, '.method public K()V', '    .locals 2\n',
+          f'    .locals 2\n    invoke-static {{}}, {ANIM}->cancelOffline()V\n')
     cancel = f'    invoke-static {{}}, {ANIM}->cancelOffline()V'
     patch(controller, '.method public q()V', cancel,
           f'    invoke-static {{}}, {STATE}->isOffline()Z\n    move-result v0\n'

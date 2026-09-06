@@ -39,6 +39,8 @@ hook sites before writing. Keep a backup of the input decoded tree.
   UI instead of spinning forever. Old generations cannot bootstrap a newer run.
 - Offline gauge: use the same scale/delegate initialization as online, and
   allow the animation driver even when simulated speeds use blank/default inputs.
+- Test Again (`L`) uses GO's offline start (`M`) when offline is selected;
+  otherwise it retains the normal restart. Close (`K`) cancels queued local frames.
 
 Vendor guidance is local, once per process after a test error, and applies to
 Xiaomi/Redmi/POCO, Oppo/Realme, Vivo/iQOO, Huawei/Honor and OnePlus. This is not a
